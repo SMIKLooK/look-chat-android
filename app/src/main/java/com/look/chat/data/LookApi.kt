@@ -28,7 +28,7 @@ class LookApi(
         coerceInputValues = true
     }
 
-    /** Отправляет текст в формате "<keyword> <модель> <запрос>" и ждёт ответ модели. */
+    /** Отправляет текст в формате "<модель> <запрос>" и ждёт ответ модели. */
     suspend fun process(serverUrl: String, text: String): ProcessResponse =
         withContext(Dispatchers.IO) {
             val body = json.encodeToString(ProcessRequest(text))
@@ -58,71 +58,15 @@ class LookApi(
             .get()
             .build()
 
-        client.newCall(request).execute().use { response ->
-            val raw = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-            json.decodeFromString<ModelsResponse>(raw)
-        }
-    }
-
-    /**
-     * Диалог с памятью: POST /api/v1/chat. Пустой sessionId — сервер создаст
-     * новую сессию и вернёт её идентификатор в ответе.
-     */
-    suspend fun chat(serverUrl: String, sessionId: String, text: String): ChatResponse =
-        withContext(Dispatchers.IO) {
-            val body = json.encodeToString(
-                ChatRequest(sessionId = sessionId.trim(), text = text),
-            ).toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder()
-                .url(chatUrl(serverUrl))
-                .post(body)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val raw = response.body?.string().orEmpty()
-                try {
-                    json.decodeFromString<ChatResponse>(raw)
-                } catch (e: Exception) {
-                    if (response.isSuccessful) throw e
-                    throw IOException("HTTP ${response.code}")
-                }
-            }
-        }
-
-    /** История сессии: GET /api/v1/chat/{session_id}. */
-    suspend fun chatHistory(serverUrl: String, sessionId: String): HistoryResponse =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url(chatUrl(serverUrl).trimEnd('/') + "/" + sessionId.trim())
-                .get()
-                .build()
-
             client.newCall(request).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
                 if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                json.decodeFromString<HistoryResponse>(raw)
-            }
-        }
-
-    /** Очистить историю сессии: DELETE /api/v1/chat/{session_id}. */
-    suspend fun clearChatHistory(serverUrl: String, sessionId: String) =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url(chatUrl(serverUrl).trimEnd('/') + "/" + sessionId.trim())
-                .delete()
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful && response.code != 404) {
-                    throw IOException("HTTP ${response.code}")
-                }
+                json.decodeFromString<ModelsResponse>(raw)
             }
         }
 
     companion object {
         fun processUrl(base: String) = base.trimEnd('/') + "/api/v1/process"
-        fun chatUrl(base: String) = base.trimEnd('/') + "/api/v1/chat"
         fun modelsUrl(base: String) = base.trimEnd('/') + "/api/v1/models"
     }
 }

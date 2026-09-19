@@ -49,8 +49,6 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -102,7 +100,6 @@ fun ChatScreen() {
 
     var showSettings by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-    var drawerTab by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -152,34 +149,16 @@ fun ChatScreen() {
         drawerContent = {
             ModalDrawerSheet {
                 Column(modifier = Modifier.imePadding()) {
-                    TabRow(selectedTabIndex = drawerTab) {
-                        Tab(
-                            selected = drawerTab == 0,
-                            onClick = { drawerTab = 0 },
-                            text = { Text("История") },
-                        )
-                        Tab(
-                            selected = drawerTab == 1,
-                            onClick = { drawerTab = 1 },
-                            text = { Text("Модели") },
-                        )
-                    }
-                    when (drawerTab) {
-                        0 -> HistoryTabContent(
-                            messages = messages,
-                            onClear = AssistantEngine::clearHistory,
-                        )
-                        else -> ModelsTabContent(
-                            models = models,
-                            customWords = customWords,
-                            onSaveWord = AssistantEngine::saveCustomWord,
-                            onRemoveWord = AssistantEngine::removeCustomWord,
-                            onPick = { model ->
-                                AssistantEngine.onModelPicked(model)
-                                scope.launch { drawerState.close() }
-                            },
-                        )
-                    }
+                    ModelsTabContent(
+                        models = models,
+                        customWords = customWords,
+                        onSaveWord = AssistantEngine::saveCustomWord,
+                        onRemoveWord = AssistantEngine::removeCustomWord,
+                        onPick = { model ->
+                            AssistantEngine.onModelPicked(model)
+                            scope.launch { drawerState.close() }
+                        },
+                    )
                 }
             }
         },
@@ -490,51 +469,7 @@ private fun InputRow(
     }
 }
 
-/** Вкладка «История»: переписка текущей сессии и очистка истории. */
-@Composable
-private fun HistoryTabContent(
-    messages: List<ChatMessage>,
-    onClear: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding(),
-    ) {
-        TextButton(onClick = onClear, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-            Text("Очистить историю (и на сервере)")
-        }
-        HorizontalDivider()
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(messages) { message ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = when {
-                            message.fromUser -> "Вы"
-                            message.isError -> "Ошибка"
-                            else -> "ИИ"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 8,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                HorizontalDivider()
-            }
-        }
-    }
-}
-
-/** Вкладка «Модели»: провайдеры, псевдонимы и свои слова для моделей. */
+/** Панель «Модели» бокового меню: доступные модели и свои слова для них. */
 @Composable
 private fun ModelsTabContent(
     models: ModelsState,
@@ -556,7 +491,7 @@ private fun ModelsTabContent(
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(16.dp),
         )
-        if (models.providers.isEmpty()) {
+        if (models.suggestions.isEmpty()) {
             Text(
                 "Сервер не ответил — список моделей пуст.\nПроверьте адрес сервера (⚙).",
                 style = MaterialTheme.typography.bodySmall,
@@ -564,47 +499,13 @@ private fun ModelsTabContent(
                 modifier = Modifier.padding(16.dp),
             )
         }
-        models.providers.forEach { provider ->
-            Text(
-                text = provider.name,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+        models.suggestions.forEach { model ->
+            NavigationDrawerItem(
+                label = { Text(model) },
+                selected = false,
+                onClick = { onPick(model) },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
             )
-            provider.models.forEach { model ->
-                NavigationDrawerItem(
-                    label = { Text(model) },
-                    selected = false,
-                    onClick = { onPick(model) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                )
-            }
-        }
-        if (models.aliases.isNotEmpty()) {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            Text(
-                "Псевдонимы (короткие имена)",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
-            )
-            models.aliases.toSortedMap().forEach { (alias, target) ->
-                NavigationDrawerItem(
-                    label = {
-                        Column {
-                            Text(alias)
-                            Text(
-                                target,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    selected = false,
-                    onClick = { onPick(alias) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                )
-            }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

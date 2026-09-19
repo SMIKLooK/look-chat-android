@@ -30,15 +30,10 @@ data class ChatMessage(
     val voice: Boolean = false,
 )
 
-/** Провайдер с его моделями — для списка ИИ в боковом меню. */
-data class ProviderUi(val name: String, val models: List<String>)
-
 /** Что показывать в строке подсказок над полем ввода и в боковом меню. */
 data class ModelsState(
     val keywords: List<String> = emptyList(),
     val suggestions: List<String> = emptyList(),
-    val providers: List<ProviderUi> = emptyList(),
-    val aliases: Map<String, String> = emptyMap(),
     /** Полный список моделей с сервера — для сопоставления в запросах. */
     val serverModels: List<String> = emptyList(),
 )
@@ -56,8 +51,9 @@ object AssistantEngine {
     // Модель по умолчанию, если в команде модель не названа.
     private const val DEFAULT_VOICE_MODEL = "фри"
 
-    // Быстрый выбор: бесплатные модели наверху, claude — в конец списка.
-    private val QUICK_MODELS = listOf("gemini", "фри", "deepseek")
+    // Главные модели — всегда первыми в подсказках и боковом меню;
+    // дальше к ним добавляются все бесплатные (см. visibleSuggestions).
+    private val VISIBLE_MODELS = listOf("deepseek", "gemini", "фри")
 
     // Тишина после последней речи, после которой диктовка уходит сама
     // (слово «стоп» отправляет сразу, не дожидаясь тишины).
@@ -72,10 +68,6 @@ object AssistantEngine {
         "гемини" to "gemini",
         "джемини" to "gemini",
         "геминис" to "gemini",
-        "клод" to "claude",
-        "клауд" to "claude",
-        "гпт" to "gpt",
-        "джипити" to "gpt",
         "дипсик" to "deepseek",
         "депсик" to "deepseek",
         // Эти слова уходят на бекенд как есть: там свои алиасы
@@ -112,9 +104,6 @@ object AssistantEngine {
     val loading = MutableStateFlow(false)
     val serverUrl = MutableStateFlow("")
     val models = MutableStateFlow(ModelsState())
-
-    /** Идентификатор сессии диалога на бекенде (пусто — создастся при запросе). */
-    val sessionId = MutableStateFlow("")
 
     // --- состояние ассистента ---
     val assistantActive = MutableStateFlow(false)
@@ -165,7 +154,7 @@ object AssistantEngine {
         fromUser = false,
         text = "Привет! Тут два режима.\n\n" +
             "Руками: пишите просто вопрос — модель подставится сама " +
-            "(по умолчанию gemini). Можно и по-старому: «лук <модель> <запрос>».\n\n" +
+            "(по умолчанию фри). Можно и по-старому: «лук <модель> <запрос>».\n\n" +
             "Голосом: нажмите 🎙 в шапке, скажите кодовое слово (по умолчанию «лук»), " +
             "наговорите запрос и завершите словом «стоп» — или просто помолчите " +
             "5 секунд, запрос уйдёт сам. Всё настраивается в ⚙.\n\n" +
@@ -193,7 +182,6 @@ object AssistantEngine {
         endWord.value = s.endWord
         ttsSkipChars.value = s.ttsSkipChars
         customModelWords.value = s.customModelWords
-        sessionId.value = s.sessionId
         refreshModels()
     }
 
@@ -270,28 +258,6 @@ object AssistantEngine {
         addSystem("Слово «$word» удалено")
     }
 
-    /**
-     * Очистить историю диалога: локальный чат и историю сессии на бекенде.
-     * Новые запросы начнут новую сессию.
-     */
-    fun clearHistory() {
-        val sid = sessionId.value
-        if (sid.isNotEmpty()) {
-            scope.launch {
-                try {
-                    api.clearChatHistory(serverUrl.value, sid)
-                } catch (e: Exception) {
-                    Log.w(TAG, "clear history", e)
-                }
-            }
-        }
-        settings?.sessionId = ""
-        sessionId.value = ""
-        nextId = 0L
-        _messages.value = listOf(welcomeMessage())
-        addSystem("История диалога очищена (и на сервере тоже).")
-    }
-
     /** Тихо подтягивает список моделей для подсказок; без сервера просто пусто. */
     fun refreshModels() {
         scope.launch {
@@ -304,16 +270,7 @@ object AssistantEngine {
                     ).distinct()
                 ModelsState(
                     keywords = response.keywords,
-                    suggestions = orderedSuggestions(fromServer),
-                    providers = response.providers
-                        .filter { !it.name.equals("echo", ignoreCase = true) }
-                        .map { provider ->
-                            ProviderUi(
-                                provider.name,
-                                provider.models.filter { !it.equals("echo", ignoreCase = true) },
-                            )
-                        },
-                    aliases = response.aliases,
+                    suggestions = visibleSuggestions(response.aliases),
                     serverModels = fromServer,
                 )
             } catch (e: Exception) {
@@ -322,15 +279,34 @@ object AssistantEngine {
         }
     }
 
-    /** Бесплатные модели — в начало, claude — в конец, echo-заглушка скрыта. */
-    private fun orderedSuggestions(fromServer: List<String>): List<String> {
-        val quickLower = QUICK_MODELS.map { it.lowercase() }.toSet()
-        val rest = fromServer.filter {
-            it.lowercase() !in quickLower && it.lowercase() != "claude" && it.lowercase() != "echo"
+    /**
+     * Список для подсказок и меню: закреплённые модели плюс все
+     * бесплатные — алиасы бекенда, ведущие на :free-модели OpenRouter
+     * или на роутер openrouter/free. Если у модели есть и латинское,
+     * и русское короткое имя — показываем только латинское.
+     */
+    private fun visibleSuggestions(aliases: Map<String, String>): List<String> {
+        val pinned = VISIBLE_MODELS.filter { p ->
+            aliases.keys.any { it.lowercase() == p.lowercase() }
         }
-        val claude = fromServer.filter { it.lowercase() == "claude" }
-        return (QUICK_MODELS + rest + claude).distinct()
+        val pinnedTargets = pinned.mapNotNull { p ->
+            aliases.entries.firstOrNull { it.key.lowercase() == p.lowercase() }?.value
+        }.toSet()
+
+        val freeByTarget = mutableMapOf<String, String>()
+        aliases.forEach { (alias, target) ->
+            val free = target.endsWith(":free") || target.substringAfterLast('/') == "free"
+            if (!free || target in pinnedTargets) return@forEach
+            val current = freeByTarget[target]
+            if (current == null || (isCyrillic(current) && !isCyrillic(alias))) {
+                freeByTarget[target] = alias
+            }
+        }
+        return pinned + freeByTarget.values.sorted()
     }
+
+    private fun isCyrillic(text: String): Boolean =
+        text.any { it.code in 0x0410..0x04FF }
 
     /**
      * Отправка сообщения, набранного руками. Стартовое слово («лук»)
@@ -361,7 +337,7 @@ object AssistantEngine {
 
     /** displayText — что показать в чате, requestText — что уйдёт на бекенд. */
     private fun submit(displayText: String, requestText: String, fromVoice: Boolean) {
-        Log.d(TAG, "submit display=$displayText request=$requestText session=${sessionId.value}")
+        Log.d(TAG, "submit display=$displayText request=$requestText")
         _messages.value += ChatMessage(id = nextMessageId(), fromUser = true, text = displayText, voice = fromVoice)
         loading.value = true
         if (assistantActive.value) {
@@ -377,13 +353,7 @@ object AssistantEngine {
 
         scope.launch {
             val reply = try {
-                val response = api.chat(serverUrl.value, sessionId.value, requestText)
-                // Сервер вернул идентификатор сессии — запоминаем: с ним
-                // бекенд подставит историю в следующие запросы.
-                if (response.sessionId.isNotBlank()) {
-                    sessionId.value = response.sessionId
-                    settings?.sessionId = response.sessionId
-                }
+                val response = api.process(serverUrl.value, requestText)
                 when {
                     response.status == "ok" && response.answer != null -> ChatMessage(
                         id = nextMessageId(),

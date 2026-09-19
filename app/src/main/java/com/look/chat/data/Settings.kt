@@ -49,11 +49,6 @@ class Settings(context: Context) {
             .putString(KEY_CUSTOM_WORDS, value.entries.joinToString(",") { "${it.key}=${it.value}" })
             .apply()
 
-    /** Идентификатор сессии диалога на бекенде (история разговора). */
-    var sessionId: String
-        get() = prefs.getString(KEY_SESSION, null) ?: ""
-        set(value) = prefs.edit().putString(KEY_SESSION, value.trim()).apply()
-
     companion object {
         // Адрес этого компьютера в Wi-Fi сети — вшит, чтобы на телефоне
         // работало сразу после установки. Если IP сменится (роутер раздаёт
@@ -83,6 +78,5 @@ class Settings(context: Context) {
         private const val KEY_END_WORD = "end_word"
         private const val KEY_TTS_SKIP = "tts_skip_chars"
         private const val KEY_CUSTOM_WORDS = "custom_model_words"
-        private const val KEY_SESSION = "session_id"
     }
 }
