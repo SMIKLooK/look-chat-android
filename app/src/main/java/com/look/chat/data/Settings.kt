@@ -30,6 +30,18 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_TTS_SKIP, null) ?: DEFAULT_TTS_SKIP_CHARS
         set(value) = prefs.edit().putString(KEY_TTS_SKIP, value).apply()
 
+    /** Интервал сигнала «я работаю» в секундах; 0 — сигнал выключен. */
+    var beepIntervalSec: Int
+        get() = prefs.getString(KEY_BEEP, null)?.toIntOrNull() ?: DEFAULT_BEEP_INTERVAL_SEC
+        set(value) = prefs.edit().putString(KEY_BEEP, value.coerceAtLeast(0).toString()).apply()
+
+    /** Разовая миграция: сохранённое старое умолчание «лук» — на «старт». */
+    fun migrateLegacyWakeWord() {
+        if (prefs.getString(KEY_WORD, null) == LEGACY_WAKE_WORD) {
+            prefs.edit().remove(KEY_WORD).apply()
+        }
+    }
+
     /**
      * Свои слова для моделей (настраиваются в боковом меню):
      * строка вида «слово=модель,слово2=модель2».
@@ -58,8 +70,15 @@ class Settings(context: Context) {
         // IP хост-машины с точки зрения Android-эмулятора.
         const val EMULATOR_URL = "http://10.0.2.2:8080"
 
-        const val DEFAULT_WAKE_WORD = "лук"
+        const val DEFAULT_WAKE_WORD = "старт"
+
+        // Кодовое слово до смены умолчания: сохранённое «лук» считаем
+        // устаревшим значением и мигрируем на новое умолчание.
+        const val LEGACY_WAKE_WORD = "лук"
         const val DEFAULT_END_WORD = "стоп"
+
+        // Сигнал «я работаю»: раз в сколько секунд, 0 — выключить.
+        const val DEFAULT_BEEP_INTERVAL_SEC = 30
 
         // Markdown-символы в ответах моделей звучат в TTS как мусор.
         const val DEFAULT_TTS_SKIP_CHARS = "*_#~`"
@@ -78,5 +97,6 @@ class Settings(context: Context) {
         private const val KEY_END_WORD = "end_word"
         private const val KEY_TTS_SKIP = "tts_skip_chars"
         private const val KEY_CUSTOM_WORDS = "custom_model_words"
+        private const val KEY_BEEP = "beep_interval_sec"
     }
 }

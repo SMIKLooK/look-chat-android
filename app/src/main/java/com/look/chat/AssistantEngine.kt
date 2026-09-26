@@ -1,6 +1,8 @@
 package com.look.chat
 
 import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -115,6 +117,9 @@ object AssistantEngine {
     /** Слово, завершающее голосовой ввод («стоп»); пусто = отправлять после паузы. */
     val endWord = MutableStateFlow(Settings.DEFAULT_END_WORD)
 
+    /** Интервал сигнала «я работаю» в секундах; 0 — сигнал выключен. */
+    val beepIntervalSec = MutableStateFlow(Settings.DEFAULT_BEEP_INTERVAL_SEC)
+
     /** Символы, которые вырезаются из ответа перед озвучкой. */
     val ttsSkipChars = MutableStateFlow(Settings.DEFAULT_TTS_SKIP_CHARS)
 
@@ -149,15 +154,61 @@ object AssistantEngine {
     private var ttsReady = false
     private var speakDoneCallback: (() -> Unit)? = null
 
+    // Идентификатор последнего куска озвучки: движок отчитывается о каждом
+    // куске отдельно, закончена озвучка — только когда отчитался последний.
+    private var lastUtteranceId: String? = null
+
+    // --- сигнал «я работаю» ---
+
+    private var tone: ToneGenerator? = null
+    private var lastBeepAt = 0L
+
+    /** Раз в секунду проверяет, не пора ли подать сигнал «я работаю». */
+    private fun postAliveBeep() {
+        main.postDelayed({
+            if (assistantActive.value) {
+                maybeBeep()
+                postAliveBeep()
+            }
+        }, 1000)
+    }
+
+    /**
+     * Сигнал подаётся только в режиме ожидания: во время диктовки писк
+     * попадёт в микрофон и распознается мусором, а пока идёт ответ,
+     * очевидно и так, что ассистент работает.
+     */
+    private fun maybeBeep() {
+        if (beepIntervalSec.value <= 0) return
+        if (voiceArmed || voiceBusy || speaking.value) return
+        val now = System.currentTimeMillis()
+        if (now - lastBeepAt >= beepIntervalSec.value * 1000L) {
+            lastBeepAt = now
+            beep()
+        }
+    }
+
+    private fun beep() {
+        try {
+            val generator = tone
+                ?: ToneGenerator(AudioManager.STREAM_MUSIC, 100).also { tone = it }
+            generator.startTone(ToneGenerator.TONE_PROP_BEEP2, 150)
+        } catch (e: Exception) {
+            Log.w(TAG, "beep", e)
+        }
+    }
+
     private fun welcomeMessage() = ChatMessage(
         id = 0,
         fromUser = false,
         text = "Привет! Тут два режима.\n\n" +
             "Руками: пишите просто вопрос — модель подставится сама " +
-            "(по умолчанию фри). Можно и по-старому: «лук <модель> <запрос>».\n\n" +
-            "Голосом: нажмите 🎙 в шапке, скажите кодовое слово (по умолчанию «лук»), " +
+            "(по умолчанию фри). Можно и по-старому: «старт <модель> <запрос>».\n\n" +
+            "Голосом: нажмите 🎙 в шапке, скажите кодовое слово (по умолчанию «старт»), " +
             "наговорите запрос и завершите словом «стоп» — или просто помолчите " +
-            "5 секунд, запрос уйдёт сам. Всё настраивается в ⚙.\n\n" +
+            "5 секунд, запрос уйдёт сам. Пока ассистент включён, он раз в " +
+            "несколько секунд подаёт короткий сигнал «я работаю». " +
+            "Всё настраивается в ⚙.\n\n" +
             "Во время озвучки тап по строке статуса останавливает голос.\n\n" +
             "Долгое нажатие на сообщение — копирование.",
     )
@@ -177,8 +228,10 @@ object AssistantEngine {
         appContext = context.applicationContext
         val s = Settings(appContext!!)
         settings = s
+        s.migrateLegacyWakeWord()
         serverUrl.value = s.serverUrl
         wakeWord.value = s.wakeWord
+        beepIntervalSec.value = s.beepIntervalSec
         endWord.value = s.endWord
         ttsSkipChars.value = s.ttsSkipChars
         customModelWords.value = s.customModelWords
@@ -199,8 +252,8 @@ object AssistantEngine {
         input.value = TextFieldValue(text = newText, selection = TextRange(newText.length))
     }
 
-    /** Сохраняет адрес сервера, кодовые слова и символы озвучки из настроек. */
-    fun saveSettings(url: String, wake: String, end: String, skipChars: String) {
+    /** Сохраняет адрес сервера, кодовые слова, символы озвучки и сигнал из настроек. */
+    fun saveSettings(url: String, wake: String, end: String, skipChars: String, beepSec: Int) {
         val cleanedUrl = url.trim()
         if (cleanedUrl.isNotEmpty()) {
             settings?.serverUrl = cleanedUrl
@@ -235,6 +288,15 @@ object AssistantEngine {
             addSystem(
                 if (skipChars.isEmpty()) "Все символы озвучиваются как есть."
                 else "Перед озвучкой вырезаются символы: $skipChars"
+            )
+        }
+
+        if (beepSec != beepIntervalSec.value) {
+            settings?.beepIntervalSec = beepSec
+            beepIntervalSec.value = beepSec
+            addSystem(
+                if (beepSec <= 0) "Сигнал «я работаю» выключен."
+                else "Сигнал «я работаю»: раз в $beepSec с."
             )
         }
     }
@@ -422,6 +484,8 @@ object AssistantEngine {
         initTts()
         startMic()
         postSilenceCheck()
+        lastBeepAt = System.currentTimeMillis()
+        postAliveBeep()
     }
 
     /** Вызывается при остановке сервиса. */
@@ -446,6 +510,13 @@ object AssistantEngine {
         tts = null
         ttsReady = false
         speakDoneCallback = null
+        lastUtteranceId = null
+        try {
+            tone?.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "tone release", e)
+        }
+        tone = null
         addSystem("Ассистент выключен")
     }
 
@@ -484,16 +555,17 @@ object AssistantEngine {
 
         if (!voiceArmed) {
             // Кодовое слово ловим уже на частичном тексте — без ожидания паузы.
+            // До кодового слова услышанное в статус не выводим: только ждём «старт».
             val tokens = partial.trim().split(Regex("\\s+"))
             val wordIdx = tokens.indexOfFirst { isWakeToken(it) }
             if (wordIdx < 0) {
-                heard.value = partial
                 return
             }
             voiceArmed = true
             dictating.value = true
             voiceBuffer.clear()
-            voiceBuffer.append(tokens.drop(wordIdx + 1).joinToString(" "))
+            // Кодовое слово оставляем в буфере: в статусе видно «старт …».
+            voiceBuffer.append(tokens.drop(wordIdx).joinToString(" "))
             pendingSegmentPartial = partial.trim()
             heard.value = voiceBuffer.toString().trim()
             pushAssistantStatus(dictatingStatus())
@@ -502,7 +574,10 @@ object AssistantEngine {
 
         currentPartial = partial.trim()
         val full = dictationText()
-        heard.value = full
+        // В строке статуса показываем текст от кодового слова включительно:
+        // частичный результат может содержать фразу, в середине которой
+        // Vosk расслышал «старт» (например «раз раз раз старт запрос»).
+        heard.value = fromWake(full)
 
         val end = endWord.value
         if (end.isNotEmpty() && heardContainsEnd(full, end)) {
@@ -524,7 +599,8 @@ object AssistantEngine {
             voiceArmed = true
             dictating.value = true
             voiceBuffer.clear()
-            voiceBuffer.append(tokens.drop(wordIdx + 1).joinToString(" "))
+            // Кодовое слово оставляем в буфере: в статусе видно «старт …».
+            voiceBuffer.append(tokens.drop(wordIdx).joinToString(" "))
             pushAssistantStatus(dictatingStatus())
             checkEndOrArmDone()
             return
@@ -533,7 +609,7 @@ object AssistantEngine {
         // Финал заменяет частичный текст той же фразы — иначе задвоится.
         if (pendingSegmentPartial != null) {
             voiceBuffer.clear()
-            voiceBuffer.append(afterWake(final.trim()))
+            voiceBuffer.append(fromWake(final.trim()))
             pendingSegmentPartial = null
         } else {
             voiceBuffer.append(' ').append(final.trim())
@@ -544,7 +620,7 @@ object AssistantEngine {
 
     /** После обновления диктовки: «стоп» — отправить, иначе ждём тишину (5 с). */
     private fun checkEndOrArmDone() {
-        heard.value = dictationText()
+        heard.value = fromWake(dictationText())
         val end = endWord.value
         if (end.isNotEmpty()) {
             val full = dictationText()
@@ -560,6 +636,12 @@ object AssistantEngine {
     private fun dictationText(): String {
         val buffered = voiceBuffer.toString().trim()
         val current = currentPartial.trim()
+        // Фраза с кодовым словом ещё не закрыта финалом: currentPartial содержит
+        // её целиком, вместе с мусором до «старт» и с уже учтённым куском из
+        // буфера. Берём только её — от «старт» включительно, иначе задвоится.
+        if (pendingSegmentPartial != null && current.isNotEmpty()) {
+            return fromWake(current)
+        }
         return if (current.isEmpty()) buffered else "$buffered $current".trim()
     }
 
@@ -571,6 +653,13 @@ object AssistantEngine {
         val tokens = text.trim().split(Regex("\\s+"))
         val idx = tokens.indexOfFirst { isWakeToken(it) }
         return if (idx >= 0) tokens.drop(idx + 1).joinToString(" ") else text
+    }
+
+    /** То же, но с самим кодовым словом: для строки статуса («старт привет»). */
+    private fun fromWake(text: String): String {
+        val tokens = text.trim().split(Regex("\\s+"))
+        val idx = tokens.indexOfFirst { isWakeToken(it) }
+        return if (idx >= 0) tokens.drop(idx).joinToString(" ") else text
     }
 
     /** Кодовое слово прощает небольшие описки распознавания («лука» → «лук»). */
@@ -635,7 +724,10 @@ object AssistantEngine {
         heard.value = ""
         lastFinalizeAt = System.currentTimeMillis()
 
-        if (text.isBlank()) {
+        // В запрос и в чат идёт только то, что сказано после кодового слова:
+        // Vosk может прислать фразу целиком («раз раз раз старт привет»).
+        val clean = afterWake(text.trim()).trim()
+        if (clean.isBlank()) {
             addSystem("После «${wakeWord.value}» не было запроса — слушаю дальше.")
             pushAssistantStatus("Слушаю кодовое слово «${wakeWord.value}»")
             return
@@ -643,19 +735,19 @@ object AssistantEngine {
         voiceBusy = true
         mic?.suspendMic()
         submit(
-            displayText = text,
+            displayText = clean,
             requestText = buildRequest(
-                text.trim().split(Regex("\\s+")),
+                clean.split(Regex("\\s+")),
                 insertDefaultModel = true,
             ),
             fromVoice = true,
         )
     }
 
-    /** Ключевые слова бекенда (из GET /api/v1/models), пока сервер не ответил — лук/look. */
+    /** Ключевые слова бекенда (из GET /api/v1/models), пока сервер не ответил — старт/старые. */
     private fun backendKeywords(): Set<String> {
         val fromServer = models.value.keywords.map { it.lowercase() }.toSet()
-        return if (fromServer.isEmpty()) setOf("лук", "look") else fromServer
+        return if (fromServer.isEmpty()) setOf("старт", "start", "лук", "look") else fromServer
     }
 
     /**
@@ -785,17 +877,62 @@ object AssistantEngine {
             onDone()
             return
         }
+        val chunks = splitForSpeech(prepareForSpeech(text))
+        if (chunks.isEmpty()) {
+            onDone()
+            return
+        }
         speaking.value = true
         speakDoneCallback = onDone
         if (assistantActive.value) {
             pushAssistantStatus("Отвечаю голосом…")
         }
-        tts?.speak(
-            prepareForSpeech(text).take(1200),
-            android.speech.tts.TextToSpeech.QUEUE_FLUSH,
-            android.os.Bundle(),
-            "look_${System.currentTimeMillis()}",
-        )
+        // Первый кусок перебивает текущую озвучку, остальные встают в очередь.
+        val stamp = System.currentTimeMillis()
+        chunks.forEachIndexed { index, chunk ->
+            val id = "look_${stamp}_$index"
+            if (index == chunks.lastIndex) lastUtteranceId = id
+            tts?.speak(
+                chunk,
+                if (index == 0) android.speech.tts.TextToSpeech.QUEUE_FLUSH
+                else android.speech.tts.TextToSpeech.QUEUE_ADD,
+                android.os.Bundle(),
+                id,
+            )
+        }
+    }
+
+    /** Дробит длинный ответ по предложениям на куски, которые движок
+     *  речи способен озвучить за один вызов (у него есть свой лимит). */
+    private fun splitForSpeech(text: String): List<String> {
+        val max = android.speech.tts.TextToSpeech.getMaxSpeechInputLength()
+        if (text.length <= max) return listOf(text)
+        val chunks = mutableListOf<String>()
+        val current = StringBuilder()
+        fun flush() {
+            if (current.isNotBlank()) chunks.add(current.toString().trim())
+            current.clear()
+        }
+        for (sentence in text.split(Regex("(?<=[.!?…])\\s+"))) {
+            var piece = sentence
+            if (piece.length > max) {
+                // Одно предложение длиннее лимита — режем по словам.
+                flush()
+                while (piece.length > max) {
+                    val space = piece.lastIndexOf(' ', max)
+                    val cut = if (space > 0) space else max
+                    chunks.add(piece.take(cut).trim())
+                    piece = piece.drop(cut).trimStart()
+                }
+                current.append(piece)
+                continue
+            }
+            if (current.length + piece.length + 1 > max) flush()
+            if (current.isNotEmpty()) current.append(' ')
+            current.append(piece)
+        }
+        flush()
+        return chunks.filter { it.isNotBlank() }
     }
 
     /** Вырезает символы из «не озвучивать» и приглаживает пробелы. */
@@ -828,22 +965,42 @@ object AssistantEngine {
             engine.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
-                    main.post { finishSpeaking() }
+                    onTtsFinished(utteranceId)
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    main.post { finishSpeaking() }
+                    onTtsFinished(utteranceId, flushQueue = true)
                 }
 
                 override fun onError(utteranceId: String?, errorCode: Int) {
-                    main.post { finishSpeaking() }
+                    onTtsFinished(utteranceId, flushQueue = true)
                 }
 
                 override fun onStop(utteranceId: String?, interrupted: Boolean) {
-                    main.post { finishSpeaking() }
+                    onTtsFinished(utteranceId)
                 }
             })
+        }
+    }
+
+    /**
+     * Куски ответа играют по очереди, поэтому озвучка закончена, только
+     * когда движок отчитался о последнем куске. Ошибка движка глушит
+     * оставшуюся очередь целиком.
+     */
+    private fun onTtsFinished(utteranceId: String?, flushQueue: Boolean = false) {
+        main.post {
+            if (flushQueue) {
+                try {
+                    tts?.stop()
+                } catch (e: Exception) {
+                    Log.w(TAG, "tts stop on error", e)
+                }
+            }
+            if (utteranceId == null || utteranceId == lastUtteranceId) {
+                finishSpeaking()
+            }
         }
     }
 

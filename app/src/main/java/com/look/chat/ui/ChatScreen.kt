@@ -66,6 +66,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,6 +78,7 @@ import com.look.chat.AssistantEngine
 import com.look.chat.AssistantService
 import com.look.chat.ChatMessage
 import com.look.chat.ModelsState
+import com.look.chat.data.Settings
 import kotlinx.coroutines.launch
 
 /** Главный экран: чат, подсказки моделей, поле ввода и голосовой ассистент. */
@@ -96,6 +98,7 @@ fun ChatScreen() {
     val endWord by AssistantEngine.endWord.collectAsStateWithLifecycle()
     val dictating by AssistantEngine.dictating.collectAsStateWithLifecycle()
     val ttsSkipChars by AssistantEngine.ttsSkipChars.collectAsStateWithLifecycle()
+    val beepSec by AssistantEngine.beepIntervalSec.collectAsStateWithLifecycle()
     val customWords by AssistantEngine.customModelWords.collectAsStateWithLifecycle()
 
     var showSettings by remember { mutableStateOf(false) }
@@ -136,8 +139,9 @@ fun ChatScreen() {
             currentWakeWord = wakeWord,
             currentEndWord = endWord,
             currentSkipChars = ttsSkipChars,
-            onSave = { url, word, end, skip ->
-                AssistantEngine.saveSettings(url, word, end, skip)
+            currentBeepSec = beepSec,
+            onSave = { url, word, end, skip, beep ->
+                AssistantEngine.saveSettings(url, word, end, skip, beep)
                 showSettings = false
             },
             onDismiss = { showSettings = false },
@@ -581,13 +585,15 @@ private fun SettingsDialog(
     currentWakeWord: String,
     currentEndWord: String,
     currentSkipChars: String,
-    onSave: (url: String, wakeWord: String, endWord: String, skipChars: String) -> Unit,
+    currentBeepSec: Int,
+    onSave: (url: String, wakeWord: String, endWord: String, skipChars: String, beepSec: Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var urlDraft by remember(currentUrl) { mutableStateOf(currentUrl) }
     var wordDraft by remember(currentWakeWord) { mutableStateOf(currentWakeWord) }
     var endDraft by remember(currentEndWord) { mutableStateOf(currentEndWord) }
     var skipDraft by remember(currentSkipChars) { mutableStateOf(currentSkipChars) }
+    var beepDraft by remember(currentBeepSec) { mutableStateOf(currentBeepSec.toString()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -652,10 +658,27 @@ private fun SettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.size(12.dp))
+                OutlinedTextField(
+                    value = beepDraft,
+                    onValueChange = { beepDraft = it },
+                    singleLine = true,
+                    label = { Text("Сигнал «я работаю», сек") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Spacer(Modifier.size(4.dp))
+                Text(
+                    "Раз в сколько секунд подавать короткий сигнал, пока ассистент включён. " +
+                        "0 — выключить. По умолчанию: ${Settings.DEFAULT_BEEP_INTERVAL_SEC}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(urlDraft, wordDraft, endDraft, skipDraft) }) {
+            TextButton(onClick = {
+                onSave(urlDraft, wordDraft, endDraft, skipDraft, beepDraft.trim().toIntOrNull() ?: currentBeepSec)
+            }) {
                 Text("Сохранить")
             }
         },

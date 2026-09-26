@@ -9,7 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 
@@ -21,6 +23,8 @@ import androidx.core.app.NotificationCompat
 class AssistantService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private val wakeLockHandler = Handler(Looper.getMainLooper())
+    private val renewWakeLock = Runnable { keepCpuAwake() }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -46,19 +50,32 @@ class AssistantService : Service() {
 
     override fun onDestroy() {
         AssistantEngine.assistantStatusListener = null
+        wakeLockHandler.removeCallbacks(renewWakeLock)
         wakeLock?.release()
         wakeLock = null
         super.onDestroy()
     }
 
-    /** Держит CPU включённым, пока ассистент слушает (иначе гашнущий экран
-     *  усыпляет устройство и сессия распознавания умирает). */
+    /**
+     * Держит CPU включённым, пока ассистент слушает (иначе гашнущий экран
+     * усыпляет устройство и сессия распознавания умирает). Замок
+     * перевыпускается раз в час, так что слушание работает 24/7.
+     */
     private fun keepCpuAwake() {
+        acquireWakeLock()
+        wakeLockHandler.removeCallbacks(renewWakeLock)
+        wakeLockHandler.postDelayed(renewWakeLock, WAKELOCK_RENEW_MS)
+    }
+
+    private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        wakeLock?.release()
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LookChat:assistant")
             .apply {
                 setReferenceCounted(false)
-                acquire(6 * 60 * 60 * 1000L) // страховка: не дольше 6 часов
+                // Запас вдвое больше периода продления: даже если одно
+                // продление пропустится, CPU не уснёт.
+                acquire(WAKELOCK_TIMEOUT_MS)
             }
     }
 
@@ -86,6 +103,9 @@ class AssistantService : Service() {
     companion object {
         private const val CHANNEL_ID = "assistant"
         private const val NOTIFICATION_ID = 1
+
+        private const val WAKELOCK_RENEW_MS = 60 * 60 * 1000L
+        private const val WAKELOCK_TIMEOUT_MS = 2 * 60 * 60 * 1000L
 
         /** Запускает сервис ассистента (нужны разрешения микрофона). */
         fun start(context: Context) {
