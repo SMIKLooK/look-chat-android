@@ -61,6 +61,10 @@ object AssistantEngine {
     // (слово «стоп» отправляет сразу, не дожидаясь тишины).
     private const val SILENCE_SEND_MS = 3500L
 
+    // Сколько ждём подтверждения кодового слова полным распознавателем:
+    // экономный режим принимает за «старт» любую речь, верить ему сразу нельзя.
+    private const val CONFIRM_TIMEOUT_MS = 10_000L
+
     /**
      * Клиентские псевдонимы: русские названия моделей, которые бекенд сам
      * не знает. «фри»/«deepseek» и прочее настроено алиасами прямо на
@@ -139,6 +143,11 @@ object AssistantEngine {
 
     // --- состояние диктовки ---
     private var voiceArmed = false
+
+    // Кандидат в кодовое слово ждёт подтверждения полным распознавателем.
+    private var confirmingWake = false
+    private var confirmStartedAt = 0L
+
     private val voiceBuffer = StringBuilder()
     private var currentPartial = ""
 
@@ -269,6 +278,7 @@ object AssistantEngine {
             addSystem("Кодовое слово ассистента: «$cleanedWake»")
             if (assistantActive.value) {
                 pushAssistantStatus("Слушаю кодовое слово «$cleanedWake»")
+                mic?.refreshIdleGrammar()
             }
         }
 
@@ -406,6 +416,7 @@ object AssistantEngine {
             // Пока запрос в полёте — микрофон приостановлен, диктовка сброшена.
             mic?.suspendMic()
             voiceArmed = false
+            confirmingWake = false
             dictating.value = false
             voiceBuffer.clear()
             currentPartial = ""
@@ -492,6 +503,7 @@ object AssistantEngine {
     fun onAssistantStopped() {
         voiceBusy = false
         voiceArmed = false
+        confirmingWake = false
         voiceBuffer.clear()
         currentPartial = ""
         pendingSegmentPartial = null
@@ -536,6 +548,7 @@ object AssistantEngine {
         val ctx = appContext ?: return
         mic = MicListener(
             context = ctx,
+            wakeWord = { wakeWord.value },
             onPartial = { partial -> onMicPartial(partial) },
             onFinal = { text -> onMicFinal(text) },
             onReady = {
@@ -554,21 +567,21 @@ object AssistantEngine {
         lastVoiceActivityAt = System.currentTimeMillis()
 
         if (!voiceArmed) {
-            // Кодовое слово ловим уже на частичном тексте — без ожидания паузы.
-            // До кодового слова услышанное в статус не выводим: только ждём «старт».
             val tokens = partial.trim().split(Regex("\\s+"))
             val wordIdx = tokens.indexOfFirst { isWakeToken(it) }
             if (wordIdx < 0) {
+                // До подтверждения кодового слова услышанное не показываем.
                 return
             }
-            voiceArmed = true
-            dictating.value = true
-            voiceBuffer.clear()
-            // Кодовое слово оставляем в буфере: в статусе видно «старт …».
-            voiceBuffer.append(tokens.drop(wordIdx).joinToString(" "))
-            pendingSegmentPartial = partial.trim()
-            heard.value = voiceBuffer.toString().trim()
-            pushAssistantStatus(dictatingStatus())
+            if (!confirmingWake) {
+                // Экономный режим озвучивает словом «старт» любую речь — сразу
+                // не верим: включаем полный словарь и ждём подтверждения.
+                confirmingWake = true
+                confirmStartedAt = System.currentTimeMillis()
+                mic?.startDictation()
+                return
+            }
+            armForDictation(tokens, wordIdx, pendingPartial = partial.trim())
             return
         }
 
@@ -594,14 +607,19 @@ object AssistantEngine {
         if (!voiceArmed) {
             val tokens = final.trim().split(Regex("\\s+"))
             val wordIdx = tokens.indexOfFirst { isWakeToken(it) }
-            if (wordIdx < 0) return
-
-            voiceArmed = true
-            dictating.value = true
-            voiceBuffer.clear()
-            // Кодовое слово оставляем в буфере: в статусе видно «старт …».
-            voiceBuffer.append(tokens.drop(wordIdx).joinToString(" "))
-            pushAssistantStatus(dictatingStatus())
+            if (wordIdx < 0) {
+                // Фраза без кодового слова: кандидат не подтвердился —
+                // тихо возвращаемся в ожидание, без сообщений в чат.
+                if (confirmingWake) rejectWakeCandidate()
+                return
+            }
+            if (!confirmingWake) {
+                confirmingWake = true
+                confirmStartedAt = System.currentTimeMillis()
+                mic?.startDictation()
+                return
+            }
+            armForDictation(tokens, wordIdx, pendingPartial = null)
             checkEndOrArmDone()
             return
         }
@@ -616,6 +634,38 @@ object AssistantEngine {
         }
         currentPartial = ""
         checkEndOrArmDone()
+    }
+
+    /** Кодовое слово подтверждено полным распознавателем — начинаем диктовку. */
+    private fun armForDictation(tokens: List<String>, wordIdx: Int, pendingPartial: String?) {
+        confirmingWake = false
+        voiceArmed = true
+        dictating.value = true
+        voiceBuffer.clear()
+        // Кодовое слово оставляем в буфере: в статусе видно «старт …».
+        voiceBuffer.append(tokens.drop(wordIdx).joinToString(" "))
+        if (pendingPartial != null) {
+            pendingSegmentPartial = pendingPartial
+            heard.value = voiceBuffer.toString().trim()
+        }
+        mic?.startDictation() // если полный словарь уже включён — ничего не сделает
+        pushAssistantStatus(dictatingStatus())
+    }
+
+    /**
+     * Кандидат в кодовое слово не подтвердился полным распознавателем
+     * (экономный режим принял обычную речь за «старт») — тихо, без
+     * сообщений в чат, возвращаемся в ожидание.
+     */
+    private fun rejectWakeCandidate() {
+        confirmingWake = false
+        voiceArmed = false
+        dictating.value = false
+        voiceBuffer.clear()
+        currentPartial = ""
+        pendingSegmentPartial = null
+        heard.value = ""
+        mic?.resumeMic()
     }
 
     /** После обновления диктовки: «стоп» — отправить, иначе ждём тишину (5 с). */
@@ -688,6 +738,11 @@ object AssistantEngine {
     private fun postSilenceCheck() {
         main.postDelayed({
             if (assistantActive.value) {
+                // Кандидат так и не подтвердился (фраза не закрывалась) —
+                // не зависаем в проверочном режиме навсегда.
+                if (confirmingWake && System.currentTimeMillis() - confirmStartedAt > CONFIRM_TIMEOUT_MS) {
+                    rejectWakeCandidate()
+                }
                 checkSilenceSend()
                 postSilenceCheck()
             }
@@ -710,6 +765,7 @@ object AssistantEngine {
             heard.value = ""
             addSystem("После «${wakeWord.value}» не было запроса — слушаю дальше.")
             pushAssistantStatus("Слушаю кодовое слово «${wakeWord.value}»")
+            mic?.resumeMic()
             return
         }
         Log.d(TAG, "silence send: $text")
@@ -730,6 +786,7 @@ object AssistantEngine {
         if (clean.isBlank()) {
             addSystem("После «${wakeWord.value}» не было запроса — слушаю дальше.")
             pushAssistantStatus("Слушаю кодовое слово «${wakeWord.value}»")
+            mic?.resumeMic()
             return
         }
         voiceBusy = true

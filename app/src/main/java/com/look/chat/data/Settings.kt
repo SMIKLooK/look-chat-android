@@ -78,7 +78,7 @@ class Settings(context: Context) {
         const val DEFAULT_END_WORD = "стоп"
 
         // Сигнал «я работаю»: раз в сколько секунд, 0 — выключить.
-        const val DEFAULT_BEEP_INTERVAL_SEC = 30
+        const val DEFAULT_BEEP_INTERVAL_SEC = 300
 
         // Markdown-символы в ответах моделей звучат в TTS как мусор.
         const val DEFAULT_TTS_SKIP_CHARS = "*_#~`"
