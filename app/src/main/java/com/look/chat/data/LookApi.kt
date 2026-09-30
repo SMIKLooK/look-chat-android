@@ -10,13 +10,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-/**
- * HTTP-клиент look-backend.
- *
- * Адрес сервера передаётся в каждом вызове, потому что пользователь может
- * поменять его в настройках приложения (эмулятор → 10.0.2.2, телефон → IP
- * компьютера в локальной сети).
- */
 class LookApi(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -40,8 +33,6 @@ class LookApi(
 
             client.newCall(request).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
-                // Бекенд и ошибки возвращает тем же JSON-конвертом — пробуем разобрать,
-                // иначе подставляем HTTP-код.
                 try {
                     json.decodeFromString<ProcessResponse>(raw)
                 } catch (e: Exception) {
@@ -50,8 +41,6 @@ class LookApi(
                 }
             }
         }
-
-    /** Список ключевых слов, псевдонимов и моделей (для подсказок в чате). */
     suspend fun models(serverUrl: String): ModelsResponse = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(modelsUrl(serverUrl))

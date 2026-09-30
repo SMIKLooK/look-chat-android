@@ -3,8 +3,6 @@ package com.look.chat.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// --- Контракт look-backend -----------------------------------------------
-
 /** Тело POST /api/v1/process: текст формата "<модель> <запрос>". */
 @Serializable
 data class ProcessRequest(val text: String)

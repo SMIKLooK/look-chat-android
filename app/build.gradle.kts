@@ -35,6 +35,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric: ресурсы и манифест доступны в unit-тестах.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 kotlin {
@@ -60,4 +67,9 @@ dependencies {
     implementation(libs.vosk.android)
 
     debugImplementation(libs.androidx.ui.tooling)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.mockwebserver)
 }

@@ -2,6 +2,7 @@ package com.look.chat.data
 
 import android.content.Context
 import android.os.Build
+import androidx.core.content.edit
 
 /** Настройки приложения: сервер, кодовые слова ассистента, озвучка. */
 class Settings(context: Context) {
@@ -9,43 +10,26 @@ class Settings(context: Context) {
 
     var serverUrl: String
         get() = prefs.getString(KEY_URL, null)?.takeIf { it.isNotBlank() } ?: defaultUrl()
-        set(value) = prefs.edit().putString(KEY_URL, value.trim().trimEnd('/')).apply()
+        set(value) = prefs.edit { putString(KEY_URL, value.trim().trimEnd('/')) }
 
-    /** Слово, на которое просыпается голосовой ассистент. */
     var wakeWord: String
         get() = prefs.getString(KEY_WORD, null)?.takeIf { it.isNotBlank() }
             ?.lowercase()?.trim() ?: DEFAULT_WAKE_WORD
-        set(value) = prefs.edit().putString(KEY_WORD, value.lowercase().trim()).apply()
+        set(value) = prefs.edit { putString(KEY_WORD, value.lowercase().trim()) }
 
-    /**
-     * Слово, которым завершается голосовой ввод (по умолчанию «стоп»).
-     * Пустое значение = отправлять запрос после паузы, как раньше.
-     */
     var endWord: String
         get() = prefs.getString(KEY_END_WORD, null)?.lowercase()?.trim() ?: DEFAULT_END_WORD
-        set(value) = prefs.edit().putString(KEY_END_WORD, value.lowercase().trim()).apply()
+        set(value) = prefs.edit { putString(KEY_END_WORD, value.lowercase().trim()) }
 
     /** Символы, которые вырезаются из ответа перед озвучкой. */
     var ttsSkipChars: String
         get() = prefs.getString(KEY_TTS_SKIP, null) ?: DEFAULT_TTS_SKIP_CHARS
-        set(value) = prefs.edit().putString(KEY_TTS_SKIP, value).apply()
+        set(value) = prefs.edit { putString(KEY_TTS_SKIP, value) }
 
-    /** Интервал сигнала «я работаю» в секундах; 0 — сигнал выключен. */
     var beepIntervalSec: Int
         get() = prefs.getString(KEY_BEEP, null)?.toIntOrNull() ?: DEFAULT_BEEP_INTERVAL_SEC
-        set(value) = prefs.edit().putString(KEY_BEEP, value.coerceAtLeast(0).toString()).apply()
+        set(value) = prefs.edit { putString(KEY_BEEP, value.coerceAtLeast(0).toString()) }
 
-    /** Разовая миграция: сохранённое старое умолчание «лук» — на «старт». */
-    fun migrateLegacyWakeWord() {
-        if (prefs.getString(KEY_WORD, null) == LEGACY_WAKE_WORD) {
-            prefs.edit().remove(KEY_WORD).apply()
-        }
-    }
-
-    /**
-     * Свои слова для моделей (настраиваются в боковом меню):
-     * строка вида «слово=модель,слово2=модель2».
-     */
     var customModelWords: Map<String, String>
         get() = prefs.getString(KEY_CUSTOM_WORDS, null)
             ?.split(',')
@@ -57,40 +41,24 @@ class Settings(context: Context) {
             }
             ?.toMap()
             ?: emptyMap()
-        set(value) = prefs.edit()
-            .putString(KEY_CUSTOM_WORDS, value.entries.joinToString(",") { "${it.key}=${it.value}" })
-            .apply()
+        set(value) = prefs.edit {
+            putString(KEY_CUSTOM_WORDS, value.entries.joinToString(",") { "${it.key}=${it.value}" })
+        }
 
     companion object {
-        // Адрес этого компьютера в Wi-Fi сети — вшит, чтобы на телефоне
-        // работало сразу после установки. Если IP сменится (роутер раздаёт
-        // адреса по DHCP), новый можно вписать в настройках приложения.
         const val PC_LAN_URL = "http://192.168.0.16:8080"
 
-        // IP хост-машины с точки зрения Android-эмулятора.
         const val EMULATOR_URL = "http://10.0.2.2:8080"
 
         const val DEFAULT_WAKE_WORD = "старт"
-
-        // Кодовое слово до смены умолчания: сохранённое «лук» считаем
-        // устаревшим значением и мигрируем на новое умолчание.
-        const val LEGACY_WAKE_WORD = "лук"
         const val DEFAULT_END_WORD = "стоп"
 
-        // Сигнал «я работаю»: раз в сколько секунд, 0 — выключить.
         const val DEFAULT_BEEP_INTERVAL_SEC = 300
 
         // Markdown-символы в ответах моделей звучат в TTS как мусор.
         const val DEFAULT_TTS_SKIP_CHARS = "*_#~`"
 
         fun defaultUrl(): String = if (isEmulator()) EMULATOR_URL else PC_LAN_URL
-
-        private fun isEmulator(): Boolean =
-            Build.FINGERPRINT.startsWith("generic") ||
-                Build.FINGERPRINT.contains("emulator") ||
-                Build.MODEL.contains("Emulator") ||
-                Build.PRODUCT.contains("sdk") ||
-                Build.HARDWARE.contains("ranchu")
 
         private const val KEY_URL = "server_url"
         private const val KEY_WORD = "wake_word"
@@ -100,3 +68,9 @@ class Settings(context: Context) {
         private const val KEY_BEEP = "beep_interval_sec"
     }
 }
+private fun isEmulator(): Boolean =
+    Build.FINGERPRINT.startsWith("generic") ||
+            Build.FINGERPRINT.contains("emulator") ||
+            Build.MODEL.contains("Emulator") ||
+            Build.PRODUCT.contains("sdk") ||
+            Build.HARDWARE.contains("ranchu")

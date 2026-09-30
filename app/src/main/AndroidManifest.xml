@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- Запросы уходят на локальный бекенд по http, поэтому
-         usesCleartextTraffic=true (незашифрованный трафик разрешён сознательно). -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Голосовой ассистент: микрофон + foreground-сервис с уведомлением. -->
@@ -14,6 +11,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
+        android:name=".LookApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
@@ -23,7 +21,7 @@
         android:theme="@style/Theme.LookChat">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -33,7 +31,7 @@
         </activity>
 
         <service
-            android:name=".AssistantService"
+            android:name=".service.AssistantService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
     </application>

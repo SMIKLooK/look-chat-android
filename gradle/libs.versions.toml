@@ -8,6 +8,9 @@ composeBom = "2025.06.01"
 kotlinxSerializationJson = "1.11.0"
 okhttp = "4.12.0"
 vosk = "0.3.47"
+junit = "4.13.2"
+robolectric = "4.17"
+androidxTestCore = "1.7.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -25,6 +28,12 @@ androidx-material-icons-extended = { group = "androidx.compose.material", name =
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 vosk-android = { group = "com.alphacephei", name = "vosk-android", version.ref = "vosk" }
+
+# Тесты (unit, JVM)
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
+mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
