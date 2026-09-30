@@ -19,11 +19,18 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Подписываем debug-ключом: release ставится на телефон
+            // без реального keystore, а размер — главный приоритет.
+            signingConfig = signingConfigs.getByName("debug")
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
         }
     }
 

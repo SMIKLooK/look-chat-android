@@ -90,6 +90,10 @@ class VoiceSessionManager(
 
     fun resume() {
         mic?.resumeMic()
+        // Пока микрофон был на паузе, «кандидат» мог подтвердиться по
+        // остаточному звуку: после возобновления верим только новому
+        // распознаванию, иначе первое же слово уйдёт как команда.
+        confirmingWake = false
         onStatusUpdate("Слушаю кодовое слово «${wakeWord()}»")
     }
 
@@ -204,7 +208,7 @@ class VoiceSessionManager(
 
     // --- внутренняя кухня ---
 
-    //Кодовое слово подтверждено полным распознавателем начинаем диктовку.
+    // Кодовое слово подтверждено полным распознавателем — начинаем диктовку.
     private fun armDictation(tokens: List<String>, wordIdx: Int, pendingPartial: String?) {
         confirmingWake = false
         voiceArmed = true

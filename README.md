@@ -91,14 +91,19 @@ gemini-3.6-flash, ошибка KEYWORD_NOT_FOUND.
 
 ## Где взять APK
 
-Готовый debug-APK лежит в корне проекта:
+Готовые APK в репозиторий не попадают (`.gitignore`) — соберите их сами:
 
-```
-look-chat-android/LookChat-debug.apk
-```
+- **`./gradlew assembleRelease` — APK для телефона (~62 МБ).** R8-минификация,
+  сжатие ресурсов, только arm64-v8a и armeabi-v7a. Подписан debug-ключом,
+  поэтому ставится без Google Play. Если будешь разбирать краши — приложи
+  `app/build/outputs/mapping/release/mapping.txt`, им расшифровываются стектрейсы.
+- **`./gradlew assembleDebug` — APK для разработки (~103 МБ).** Без минификации,
+  со всеми ABI (ставится и на эмулятор x86_64).
 
-Либо соберите сами: `./gradlew assembleDebug` — результат появится в
-`app/build/outputs/apk/debug/app-debug.apk`.
+Результат появится в `app/build/outputs/apk/<вариант>/`.
+
+Модель Vosk (~48 МБ) вшита в оба APK и распаковывается на устройстве
+при первом включении ассистента.
 
 ## Как расширять
 

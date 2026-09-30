@@ -5,7 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class VoiceCommandTest {
+class VoiceCommandParserTest {
 
     private val wake = "старт"
     private val end = "стоп"

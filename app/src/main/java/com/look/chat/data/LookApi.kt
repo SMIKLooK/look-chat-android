@@ -47,12 +47,12 @@ class LookApi(
             .get()
             .build()
 
-            client.newCall(request).execute().use { response ->
-                val raw = response.body?.string().orEmpty()
-                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                json.decodeFromString<ModelsResponse>(raw)
-            }
+        client.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            json.decodeFromString<ModelsResponse>(raw)
         }
+    }
 
     companion object {
         fun processUrl(base: String) = base.trimEnd('/') + "/api/v1/process"

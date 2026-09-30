@@ -155,6 +155,9 @@ class MicListener(
                         // чтобы в неё не попала озвучка самого ассистента.
                         recent.clear()
                         recentSamples = 0
+                        // и хвост звука, накопленный до паузы: после
+                        // возобновления он должен остаться неуслышанным
+                        live.clear()
                     } else {
                         live.addLast(buffer.copyOf(read))
                     }
@@ -186,20 +189,26 @@ class MicListener(
                 // микрофон успевает опрашиваться, и ничего не теряется.
                 val next = replay?.removeFirstOrNull()
                 if (next != null) {
-                    emitWave(rec, next)
+                    // Прокрутка нужна только живому распознаванию; на паузе
+                    // старый звук должен молчать, а не рождать события.
+                    if (!paused) emitWave(rec, next)
                     continue
                 }
 
-                while (live.isNotEmpty()) {
-                    val chunk = live.removeFirst()
-                    emitWave(rec, chunk)
-                    if (!dictating) {
-                        // историю копим только в режиме ожидания: она нужна,
-                        // чтобы прогреть следующий полный распознаватель
-                        recent.addLast(chunk)
-                        recentSamples += chunk.size
-                        while (recentSamples > REPLAY_SECONDS * SAMPLE_RATE) {
-                            recentSamples -= recent.removeFirst().size
+                // На паузе распознаватель не получает звук вовсе:
+                // ни накопленный хвост, ни события из него не нужны.
+                if (!paused) {
+                    while (live.isNotEmpty()) {
+                        val chunk = live.removeFirst()
+                        emitWave(rec, chunk)
+                        if (!dictating) {
+                            // историю копим только в режиме ожидания: она нужна,
+                            // чтобы прогреть следующий полный распознаватель
+                            recent.addLast(chunk)
+                            recentSamples += chunk.size
+                            while (recentSamples > REPLAY_SECONDS * SAMPLE_RATE) {
+                                recentSamples -= recent.removeFirst().size
+                            }
                         }
                     }
                 }

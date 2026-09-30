@@ -8,3 +8,6 @@
 /captures
 .externalNativeBuild
 .cxx
+
+# Готовые APK в репозиторий не попадают — собираются локально.
+/*.apk

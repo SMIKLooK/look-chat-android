@@ -25,6 +25,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * Центральный фасад приложения: держит состояние чата и голосового
+ * ассистента и склеивает UI, сеть, настройки и аудиоподсистемы.
+ * Чистая логика вынесена в com.look.chat.logic, аудио — в com.look.chat.voice.audio.
+ */
 object AssistantEngine {
     private const val TAG = "LookAssistant"
     private val WHITESPACE_REGEX = Regex("\\s+")
@@ -359,6 +364,9 @@ object AssistantEngine {
 
     /** Вызывается из AssistantService, когда сервис поднят. */
     fun onAssistantStarted(context: Context) {
+        // Повторная доставка startCommand при живом сервисе (START_STICKY):
+        // выходим, иначе старая сессия микрофона утечёт, а чат задвоит приветствие.
+        if (_assistantActive.value && session != null) return
         ensureInit(context)
         _assistantActive.value = true
         addSystem(
