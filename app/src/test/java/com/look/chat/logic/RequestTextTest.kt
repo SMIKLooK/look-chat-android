@@ -26,6 +26,9 @@ class RequestTextTest {
         assertEquals("gemini привет", build("геминис", "привет"))
         assertEquals("deepseek привет", build("дипсик", "привет"))
         assertEquals("deepseek привет", build("депсик", "привет"))
+        assertEquals("claude привет", build("клод", "привет"))
+        assertEquals("gpt привет", build("гпт", "привет"))
+        assertEquals("perplexity привет", build("перплексити", "привет"))
     }
 
     @Test
@@ -41,6 +44,9 @@ class RequestTextTest {
         assertEquals("deepseek погода", build("deepseek", "погода"))
         assertEquals("free погода", build("free", "погода"))
         assertEquals("фри какая погода", build("фри", "какая", "погода"))
+        assertEquals("claude привет", build("claude", "привет"))
+        assertEquals("gpt привет", build("gpt", "привет"))
+        assertEquals("гигачат привет", build("гигачат", "привет"))
     }
 
     @Test

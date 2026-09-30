@@ -4,7 +4,11 @@ internal object RequestText {
 
     const val DEFAULT_MODEL = "фри"
 
-    val PINNED_MODELS = listOf("deepseek", "gemini", "фри", "гигачат")
+    // Порядок = порядок чипов-подсказок в чате; чип виден, только если
+    // алиас есть в ответе GET /api/v1/models.
+    val PINNED_MODELS = listOf(
+        "deepseek", "gemini", "claude", "gpt", "perplexity", "фри", "гигачат",
+    )
 
     val ALIASES = mapOf(
         "гемини" to "gemini",
@@ -12,8 +16,11 @@ internal object RequestText {
         "геминис" to "gemini",
         "дипсик" to "deepseek",
         "депсик" to "deepseek",
+        "клод" to "claude",
+        "гпт" to "gpt",
+        "перплексити" to "perplexity",
     )
-    val PASSTHROUGH_MODELS = setOf("фри", "free", "deepseek")
+    val PASSTHROUGH_MODELS = setOf("фри", "free", "deepseek", "claude", "gpt", "гигачат", "gigachat")
     val PHRASE_ALIASES = mapOf(
         "дип сик" to "deepseek",
         "ди псих" to "deepseek",
