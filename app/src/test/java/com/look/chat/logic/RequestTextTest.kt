@@ -46,7 +46,6 @@ class RequestTextTest {
         assertEquals("фри какая погода", build("фри", "какая", "погода"))
         assertEquals("claude привет", build("claude", "привет"))
         assertEquals("gpt привет", build("gpt", "привет"))
-        assertEquals("гигачат привет", build("гигачат", "привет"))
     }
 
     @Test
@@ -71,15 +70,6 @@ class RequestTextTest {
         assertEquals("норд-код привет", build("норд", "код", "привет"))
         assertEquals("линг-мед привет", build("линг", "мед", "привет"))
         assertEquals("линг-фин привет", build("линг", "фин", "привет"))
-        assertEquals("гигачат привет", build("гига", "чат", "привет"))
-    }
-
-    @Test
-    fun `gigachat passes through when server knows it`() {
-        assertEquals(
-            "гигачат привет",
-            build("гигачат", "привет", serverModels = listOf("гигачат", "gigachat", "сбер", "sber")),
-        )
     }
 
     @Test

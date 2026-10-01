@@ -4,8 +4,8 @@ import android.content.Context
 import android.util.Log
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
-import com.look.chat.data.LookApi
-import com.look.chat.data.ModelsResponse
+import com.look.chat.ai.AiError
+import com.look.chat.ai.LocalBackend
 import com.look.chat.data.Settings
 import com.look.chat.data.model.ChatMessage
 import com.look.chat.data.model.ModelsState
@@ -14,8 +14,10 @@ import com.look.chat.logic.RequestText
 import com.look.chat.voice.VoiceSessionManager
 import com.look.chat.voice.audio.BeepGenerator
 import com.look.chat.voice.audio.TtsSpeaker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,11 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- * Центральный фасад приложения: держит состояние чата и голосового
- * ассистента и склеивает UI, сеть, настройки и аудиоподсистемы.
- * Чистая логика вынесена в com.look.chat.logic, аудио — в com.look.chat.voice.audio.
- */
 object AssistantEngine {
     private const val TAG = "LookAssistant"
     private val WHITESPACE_REGEX = Regex("\\s+")
@@ -38,12 +35,12 @@ object AssistantEngine {
 
     private var appContext: Context? = null
     private var settings: Settings? = null
-    private val api = LookApi()
+
+    internal var backend: LocalBackend = LocalBackend(LocalBackend.defaultRegistry())
 
     private val nextId = AtomicLong(1L)
     private fun nextMessageId(): Long = nextId.getAndIncrement()
 
-    // --- состояние чата ---
     internal val _messages = MutableStateFlow(listOf(welcomeMessage()))
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
@@ -53,13 +50,9 @@ object AssistantEngine {
     internal val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
-    internal val _serverUrl = MutableStateFlow("")
-    val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
-
     internal val _models = MutableStateFlow(ModelsState())
     val models: StateFlow<ModelsState> = _models.asStateFlow()
 
-    // --- состояние ассистента ---
     internal val _assistantActive = MutableStateFlow(false)
     val assistantActive: StateFlow<Boolean> = _assistantActive.asStateFlow()
 
@@ -89,8 +82,6 @@ object AssistantEngine {
 
     private val _assistantStatus = MutableStateFlow("")
     val assistantStatus: StateFlow<String> = _assistantStatus.asStateFlow()
-
-    // --- подсистемы голоса ---
 
     private var session: VoiceSessionManager? = null
 
@@ -123,10 +114,16 @@ object AssistantEngine {
             "Всё настраивается в ⚙.\n\n" +
             "Во время озвучки тап по строке статуса останавливает голос.\n\n" +
             "Долгое нажатие на сообщение — копирование.",
+        createdAt = System.currentTimeMillis(),
     )
 
     private fun addSystem(text: String) {
-        val msg = ChatMessage(id = nextMessageId(), fromUser = false, text = text)
+        val msg = ChatMessage(
+            id = nextMessageId(),
+            fromUser = false,
+            text = text,
+            createdAt = System.currentTimeMillis(),
+        )
         _messages.update { it + msg }
     }
 
@@ -134,14 +131,12 @@ object AssistantEngine {
         _assistantStatus.value = text
     }
 
-    /** Инициализация контекстом; безопасно вызывать сколько угодно раз. */
     fun ensureInit(context: Context) {
         val app = context.applicationContext
         if (appContext === app) return
         appContext = app
         val s = Settings(app)
         settings = s
-        _serverUrl.value = s.serverUrl
         _wakeWord.value = s.wakeWord
         _beepIntervalSec.value = s.beepIntervalSec
         _endWord.value = s.endWord
@@ -150,13 +145,11 @@ object AssistantEngine {
         refreshModels()
     }
 
-    // --- чат: ручной ввод ---
 
     fun onInputChange(value: TextFieldValue) {
         _input.value = value
     }
 
-    /** Подставляет выбранную из подсказок модель и ставит курсор после неё. */
     fun onModelPicked(model: String) {
         val current = _input.value
         val base = current.text.trimEnd()
@@ -164,16 +157,7 @@ object AssistantEngine {
         _input.value = TextFieldValue(text = newText, selection = TextRange(newText.length))
     }
 
-    /** Сохраняет адрес сервера, кодовые слова, символы озвучки и сигнал из настроек. */
-    fun saveSettings(url: String, wake: String, end: String, skipChars: String, beepSec: Int) {
-        val cleanedUrl = url.trim()
-        if (cleanedUrl.isNotEmpty()) {
-            settings?.serverUrl = cleanedUrl
-            _serverUrl.value = settings?.serverUrl ?: cleanedUrl
-            addSystem("Адрес сервера сохранён: ${_serverUrl.value}")
-            refreshModels()
-        }
-
+    fun saveSettings(wake: String, end: String, skipChars: String, beepSec: Int) {
         val cleanedWake = wake.trim().lowercase()
         if (cleanedWake.isNotEmpty() && cleanedWake != _wakeWord.value) {
             settings?.wakeWord = cleanedWake
@@ -214,7 +198,6 @@ object AssistantEngine {
         }
     }
 
-    /** Добавляет/обновляет своё слово для модели (боковое меню). */
     fun saveCustomWord(word: String, model: String) {
         val w = word.trim().lowercase()
         val m = model.trim()
@@ -225,7 +208,6 @@ object AssistantEngine {
         addSystem("Слово «$w» теперь означает модель $m")
     }
 
-    /** Удаляет своё слово для модели. */
     fun removeCustomWord(word: String) {
         val updated = _customModelWords.value - word
         settings?.customModelWords = updated
@@ -233,34 +215,29 @@ object AssistantEngine {
         addSystem("Слово «$word» удалено")
     }
 
-    /** Тихо подтягивает список моделей для подсказок; без сервера просто пусто. */
     fun refreshModels() {
-        val url = _serverUrl.value
-        scope.launch {
-            val state = withContext(Dispatchers.IO) {
-                try {
-                    val response: ModelsResponse = api.models(url)
-                    val fromServer = (
-                        response.aliases.keys +
-                            response.providers.flatMap { it.models } +
-                            response.providers.map { it.name }
-                        ).distinct()
-                    ModelsState(
-                        keywords = response.keywords,
-                        suggestions = ModelSuggestions.visible(response.aliases),
-                        serverModels = fromServer,
-                    )
-                } catch (e: Exception) {
-                    ModelsState()
-                }
-            }
-            _models.value = state
+        val registry = backend.registry
+        val providers = registry.providers
+        val aliases = registry.aliases
+        val servable = aliases.filterValues { target ->
+            providers.any { it.supports(target) }
         }
+        val allNames = (
+            aliases.keys +
+                providers.flatMap { it.models } +
+                providers.map { it.name }
+            ).distinct()
+        _models.value = ModelsState(
+            keywords = emptyList(),
+            suggestions = ModelSuggestions.visible(servable),
+            serverModels = allNames,
+            providers = providers.map { it.name },
+        )
     }
 
     /**
      * Отправка сообщения, набранного руками. Ключевое слово («старт»)
-     * не обязательно и в чате показывается как есть: на бекенд оно
+     * не обязательно и в чате показывается как есть: движку оно
      * не уходит — там формат «<модель> <запрос>».
      */
     fun send() {
@@ -291,81 +268,92 @@ object AssistantEngine {
             "Нажмите 🎙 и разрешите доступ.")
     }
 
-    // --- общая отправка на бекенд ---
+    @Volatile
+    private var requestJob: Job? = null
 
-    /** displayText — что показать в чате, requestText — что уйдёт на бекенд. */
     private fun submit(displayText: String, requestText: String, fromVoice: Boolean) {
         Log.d(TAG, "submit display=$displayText request=$requestText")
-        val userMsg = ChatMessage(id = nextMessageId(), fromUser = true, text = displayText, voice = fromVoice)
+        val userMsg = ChatMessage(
+            id = nextMessageId(),
+            fromUser = true,
+            text = displayText,
+            voice = fromVoice,
+            createdAt = System.currentTimeMillis(),
+        )
         _messages.update { it + userMsg }
         _loading.value = true
         if (_assistantActive.value) {
-            // Пока запрос в полёте — микрофон приостановлен, диктовка сброшена.
             session?.suspendForRequest()
             pushAssistantStatus("Отправляю запрос…")
         }
 
-        val url = _serverUrl.value
-        scope.launch {
-            val reply = withContext(Dispatchers.IO) {
-                try {
-                    val response = api.process(url, requestText)
-                    when {
-                        response.status == "ok" && response.answer != null -> ChatMessage(
+        requestJob = scope.launch {
+            try {
+                val reply = withContext(Dispatchers.IO) {
+                    try {
+                        val result = backend.process(requestText)
+                        ChatMessage(
                             id = nextMessageId(),
                             fromUser = false,
-                            text = response.answer,
-                            model = response.model,
-                            provider = response.provider,
-                            elapsedMs = response.elapsedMs,
+                            text = result.answer,
+                            model = result.model,
+                            provider = result.provider,
+                            elapsedMs = result.elapsedMs,
+                            createdAt = System.currentTimeMillis(),
                         )
-                        response.error != null -> ChatMessage(
+                    } catch (e: AiError) {
+                        ChatMessage(
                             id = nextMessageId(),
                             fromUser = false,
-                            text = "Ошибка ${response.error.code}\n${response.error.message}",
+                            text = "Ошибка ${e.code}\n${e.message}",
                             isError = true,
+                            createdAt = System.currentTimeMillis(),
                         )
-                        else -> ChatMessage(
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        ChatMessage(
                             id = nextMessageId(),
                             fromUser = false,
-                            text = "Сервер вернул неожиданный ответ",
+                            text = "Не удалось обратиться к модели\n" +
+                                "(${e.message ?: e.javaClass.simpleName})\n\n" +
+                                "Проверь интернет-соединение и ключи провайдеров (ai/Keys.kt).",
                             isError = true,
+                            createdAt = System.currentTimeMillis(),
                         )
                     }
-                } catch (e: Exception) {
-                    ChatMessage(
-                        id = nextMessageId(),
-                        fromUser = false,
-                        text = "Не удалось связаться с сервером $url\n" +
-                            "(${e.message ?: e.javaClass.simpleName})\n\n" +
-                            "Проверь, что бекенд запущен, и адрес в настройках (⚙).",
-                        isError = true,
-                    )
                 }
-            }
-            _messages.update { it + reply }
-            _loading.value = false
+                _messages.update { it + reply }
+                requestJob = null
 
-            when {
-                // Голосовая команда: озвучиваем ответ, потом снова слушаем.
-                fromVoice -> {
-                    session?.clearBusy()
-                    speakAndThenResume(if (reply.isError) "Ошибка. ${reply.text}" else reply.text)
+                when {
+                    fromVoice -> {
+                        session?.clearBusy()
+                        speakAndThenResume(if (reply.isError) "Ошибка. ${reply.text}" else reply.text)
+                    }
+                    _assistantActive.value && !reply.isError -> speakAndThenResume(reply.text)
+                    _assistantActive.value -> resumeListening()
                 }
-                // Ручной запрос при включённом ассистенте тоже озвучиваем.
-                _assistantActive.value && !reply.isError -> speakAndThenResume(reply.text)
-                // Ручной запрос с ошибкой: просто возвращаем микрофон.
-                _assistantActive.value -> resumeListening()
+            } finally {
+                _loading.value = false
             }
         }
     }
 
-    // --- голосовой ассистент ---
+    fun cancelRequest() {
+        val job = requestJob ?: return
+        if (!job.isActive) return
+        job.cancel()
+        requestJob = null
+        _loading.value = false
+        addSystem("Запрос отменён")
+        if (_assistantActive.value) {
+            session?.clearBusy()
+            resumeListening()
+        }
+    }
 
-    /** Вызывается из AssistantService, когда сервис поднят. */
     fun onAssistantStarted(context: Context) {
-        // Повторная доставка startCommand при живом сервисе (START_STICKY):
-        // выходим, иначе старая сессия микрофона утечёт, а чат задвоит приветствие.
         if (_assistantActive.value && session != null) return
         ensureInit(context)
         _assistantActive.value = true
@@ -390,7 +378,6 @@ object AssistantEngine {
         beeper.start()
     }
 
-    /** Вызывается при остановке сервиса. */
     fun onAssistantStopped() {
         _assistantActive.value = false
         beeper.stop()
@@ -404,7 +391,6 @@ object AssistantEngine {
         addSystem("Ассистент выключен")
     }
 
-    /** Останавливает текущую озвучку (тап по строке статуса). */
     fun stopSpeaking() {
         ttsSpeaker.stop()
     }
@@ -426,7 +412,6 @@ object AssistantEngine {
         ttsSpeaker.speak(text, _ttsSkipChars.value, onDone = { resumeListening() })
     }
 
-    /** Ответ обработан: микрофон снова слушает кодовое слово. */
     private fun resumeListening() {
         val s = session
         if (s != null) s.resume() else pushAssistantStatus("Слушаю кодовое слово «${_wakeWord.value}»")

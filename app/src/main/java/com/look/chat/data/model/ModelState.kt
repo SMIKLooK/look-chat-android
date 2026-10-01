@@ -4,4 +4,5 @@ data class ModelsState(
     val keywords: List<String> = emptyList(),
     val suggestions: List<String> = emptyList(),
     val serverModels: List<String> = emptyList(),
+    val providers: List<String> = emptyList(),
 )

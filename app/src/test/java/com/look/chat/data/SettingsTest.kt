@@ -8,7 +8,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.shadows.ShadowBuild
 
 @RunWith(RobolectricTestRunner::class)
 class SettingsTest {
@@ -25,33 +24,13 @@ class SettingsTest {
     private fun fresh() = Settings(context)
 
     @Test
-    fun `defaults on a device build`() {
+    fun `defaults are used when nothing stored`() {
         val s = fresh()
-        // Robolectric не эмулятор — должен выбираться адрес компьютера в LAN
-        assertEquals(Settings.PC_LAN_URL, s.serverUrl)
         assertEquals(Settings.DEFAULT_WAKE_WORD, s.wakeWord)
         assertEquals(Settings.DEFAULT_END_WORD, s.endWord)
         assertEquals(Settings.DEFAULT_TTS_SKIP_CHARS, s.ttsSkipChars)
         assertEquals(Settings.DEFAULT_BEEP_INTERVAL_SEC, s.beepIntervalSec)
         assertEquals(emptyMap<String, String>(), s.customModelWords)
-    }
-
-    @Test
-    fun `emulator fingerprint switches to emulator url`() {
-        ShadowBuild.setFingerprint("generic/google/generic_x86")
-        assertEquals(Settings.EMULATOR_URL, Settings.defaultUrl())
-    }
-
-    @Test
-    fun `server url is trimmed and stored`() {
-        fresh().serverUrl = "http://host:8080///"
-        assertEquals("http://host:8080", fresh().serverUrl)
-    }
-
-    @Test
-    fun `blank stored server url falls back to default`() {
-        fresh().serverUrl = "   "
-        assertEquals(Settings.PC_LAN_URL, fresh().serverUrl)
     }
 
     @Test
@@ -110,14 +89,10 @@ class SettingsTest {
 
     @Test
     fun `settings are stored under one shared prefs file`() {
-        // разные свойства должны жить в одном файле — иначе часть настроек терялась бы
         val s = fresh()
-        s.serverUrl = "http://host:1"
         s.wakeWord = "джарвис"
         val reread = fresh()
-        assertEquals("http://host:1", reread.serverUrl)
         assertEquals("джарвис", reread.wakeWord)
-        assertTrue(prefs.contains("server_url"))
         assertTrue(prefs.contains("wake_word"))
     }
 }

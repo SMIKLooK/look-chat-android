@@ -24,15 +24,13 @@ import com.look.chat.data.Settings
 
 @Composable
 fun SettingsDialog(
-    currentUrl: String,
     currentWakeWord: String,
     currentEndWord: String,
     currentSkipChars: String,
     currentBeepSec: Int,
-    onSave: (url: String, wakeWord: String, endWord: String, skipChars: String, beepSec: Int) -> Unit,
+    onSave: (wakeWord: String, endWord: String, skipChars: String, beepSec: Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var urlDraft by remember(currentUrl) { mutableStateOf(currentUrl) }
     var wordDraft by remember(currentWakeWord) { mutableStateOf(currentWakeWord) }
     var endDraft by remember(currentEndWord) { mutableStateOf(currentEndWord) }
     var skipDraft by remember(currentSkipChars) { mutableStateOf(currentSkipChars) }
@@ -46,22 +44,6 @@ fun SettingsDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
                 OutlinedTextField(
-                    value = urlDraft,
-                    onValueChange = { urlDraft = it },
-                    singleLine = true,
-                    label = { Text("Адрес сервера") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.size(8.dp))
-                Text(
-                    "На телефоне адрес этого компьютера уже вшит: ${Settings.PC_LAN_URL}\n" +
-                        "Работает в той же Wi-Fi сети; если IP сменился — впишите новый.\n" +
-                        "Для эмулятора по умолчанию: ${Settings.EMULATOR_URL}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.size(12.dp))
-                OutlinedTextField(
                     value = wordDraft,
                     onValueChange = { wordDraft = it },
                     singleLine = true,
@@ -71,7 +53,7 @@ fun SettingsDialog(
                 Spacer(Modifier.size(4.dp))
                 Text(
                     "Слово, на которое просыпается микрофон. Нужно только для старта " +
-                        "записи — на бекенд не отправляется.",
+                        "записи — в запрос не попадает.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -126,7 +108,6 @@ fun SettingsDialog(
         confirmButton = {
             TextButton(onClick = {
                 onSave(
-                    urlDraft.trim(),
                     wordDraft.trim(),
                     endDraft.trim(),
                     skipDraft,

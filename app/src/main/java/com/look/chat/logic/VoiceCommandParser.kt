@@ -52,7 +52,7 @@ internal object VoiceCommandParser {
     }
 
     private fun matchesWake(t: String, w: String): Boolean =
-        t == w || (w.length >= 3 && t.startsWith(w) && t.length <= w.length + 2)
+        t == w || (w.length >= 3 && t.startsWith(w) && t.length <= w.length + 1)
 
     private fun matchesEnd(t: String, e: String): Boolean =
         t == e || (e.length >= 3 && t.startsWith(e) && t.length <= e.length + 1)

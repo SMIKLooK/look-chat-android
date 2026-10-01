@@ -10,4 +10,5 @@ data class ChatMessage(
     val elapsedMs: Long? = null,
     val isError: Boolean = false,
     val voice: Boolean = false,
+    val createdAt: Long = 0L,
 )

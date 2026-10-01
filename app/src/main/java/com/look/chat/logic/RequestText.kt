@@ -4,10 +4,8 @@ internal object RequestText {
 
     const val DEFAULT_MODEL = "фри"
 
-    // Порядок = порядок чипов-подсказок в чате; чип виден, только если
-    // алиас есть в ответе GET /api/v1/models.
     val PINNED_MODELS = listOf(
-        "deepseek", "gemini", "claude", "gpt", "perplexity", "фри", "гигачат",
+        "deepseek", "gemini", "claude", "gpt", "perplexity", "фри",
     )
 
     val ALIASES = mapOf(
@@ -20,7 +18,7 @@ internal object RequestText {
         "гпт" to "gpt",
         "перплексити" to "perplexity",
     )
-    val PASSTHROUGH_MODELS = setOf("фри", "free", "deepseek", "claude", "gpt", "гигачат", "gigachat")
+    val PASSTHROUGH_MODELS = setOf("фри", "free", "deepseek", "claude", "gpt")
     val PHRASE_ALIASES = mapOf(
         "дип сик" to "deepseek",
         "ди псих" to "deepseek",
@@ -29,7 +27,6 @@ internal object RequestText {
         "деп сик" to "deepseek",
         "депп сик" to "deepseek",
         "деп сок" to "deepseek",
-        "гига чат" to "гигачат",
         "инклинг мини" to "инклинг-мини",
         "немотрон ультра" to "немотрон-ультра",
         "немотрон супер" to "немотрон-супер",
@@ -77,7 +74,7 @@ internal object RequestText {
             return (listOf(alias) + tokens.drop(1)).joinToString(" ")
         }
 
-        // Известные бекенду слова уходят как есть — там свои алиасы.
+        // Известные движку слова уходят как есть — там свои алиасы.
         if (normTokens[0] in PASSTHROUGH_MODELS) {
             return tokens.joinToString(" ")
         }

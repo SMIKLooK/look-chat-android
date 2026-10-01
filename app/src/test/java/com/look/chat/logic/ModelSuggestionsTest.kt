@@ -16,17 +16,15 @@ class ModelSuggestionsTest {
     }
 
     @Test
-    fun `gigachat is pinned when backend exposes its alias`() {
+    fun `perplexity is pinned when alias exists`() {
         val aliases = mapOf(
             "deepseek" to "deepseek/deepseek-v4-flash",
             "gemini" to "gemini-3.6-flash",
             "фри" to "openrouter/free",
-            "гигачат" to "GigaChat",
-            "gigachat" to "GigaChat",
-            "сбер" to "GigaChat",
+            "perplexity" to "perplexity/sonar",
         )
         assertEquals(
-            listOf("deepseek", "gemini", "фри", "гигачат"),
+            listOf("deepseek", "gemini", "perplexity", "фри"),
             ModelSuggestions.visible(aliases),
         )
     }

@@ -11,3 +11,6 @@
 
 # Готовые APK в репозиторий не попадают — собираются локально.
 /*.apk
+
+# Ключи API не коммитятся: скопируй Keys.kt.example в Keys.kt и впиши свои ключи.
+/app/src/main/java/com/look/chat/ai/Keys.kt

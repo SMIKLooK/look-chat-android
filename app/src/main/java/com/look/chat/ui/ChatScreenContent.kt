@@ -3,11 +3,13 @@ package com.look.chat.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,9 +31,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -43,12 +48,14 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,8 +63,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -67,6 +76,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.look.chat.data.model.ChatMessage
 import com.look.chat.data.model.ModelsState
+import com.look.chat.logic.MarkdownParser
+import com.look.chat.logic.TimeFormat
 import com.look.chat.ui.theme.LookChatTheme
 import kotlinx.coroutines.launch
 
@@ -76,8 +87,9 @@ fun ChatScreenContent(
     state: ChatScreenUiState,
     onInputChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
+    onCancelRequest: () -> Unit,
     onModelPicked: (String) -> Unit,
-    onSaveSettings: (url: String, wakeWord: String, endWord: String, skipChars: String, beepSec: Int) -> Unit,
+    onSaveSettings: (wakeWord: String, endWord: String, skipChars: String, beepSec: Int) -> Unit,
     onSaveCustomWord: (word: String, model: String) -> Unit,
     onRemoveCustomWord: (String) -> Unit,
     onStopSpeaking: () -> Unit,
@@ -88,6 +100,8 @@ fun ChatScreenContent(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val listState = rememberLazyListState()
+    val showScrollToBottom by remember { derivedStateOf { listState.canScrollForward } }
 
     var showSettings by remember { mutableStateOf(false) }
 
@@ -124,13 +138,12 @@ fun ChatScreenContent(
 
     if (showSettings) {
         SettingsDialog(
-            currentUrl = state.serverUrl,
             currentWakeWord = state.wakeWord,
             currentEndWord = state.endWord,
             currentSkipChars = state.ttsSkipChars,
             currentBeepSec = state.beepSec,
-            onSave = { url, word, end, skip, beep ->
-                onSaveSettings(url, word, end, skip, beep)
+            onSave = { word, end, skip, beep ->
+                onSaveSettings(word, end, skip, beep)
                 showSettings = false
             },
             onDismiss = { showSettings = false },
@@ -168,7 +181,11 @@ fun ChatScreenContent(
                         Column {
                             Text("Look Chat")
                             Text(
-                                text = state.serverUrl,
+                                text = if (state.models.providers.isEmpty()) {
+                                    "Ключи не заданы (ai/Keys.kt)"
+                                } else {
+                                    state.models.providers.joinToString(" · ")
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -204,11 +221,34 @@ fun ChatScreenContent(
                     .consumeWindowInsets(innerPadding)
                     .imePadding(),
             ) {
-                MessageList(
-                    messages = state.messages,
-                    loading = state.loading,
-                    modifier = Modifier.weight(1f),
-                )
+                Box(modifier = Modifier.weight(1f)) {
+                    MessageList(
+                        messages = state.messages,
+                        loading = state.loading,
+                        listState = listState,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (showScrollToBottom) {
+                        SmallFloatingActionButton(
+                            onClick = {
+                                scope.launch {
+                                    val target = listState.layoutInfo.totalItemsCount - 1
+                                    if (target >= 0) listState.animateScrollToItem(target)
+                                }
+                            },
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 12.dp, bottom = 8.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Прокрутить к последнему сообщению",
+                            )
+                        }
+                    }
+                }
                 if (state.assistantActive) {
                     AssistantStatus(
                         loading = state.loading,
@@ -231,6 +271,7 @@ fun ChatScreenContent(
                     loading = state.loading,
                     onInputChange = onInputChange,
                     onSend = onSend,
+                    onCancelRequest = onCancelRequest,
                 )
             }
         }
@@ -241,13 +282,21 @@ fun ChatScreenContent(
 private fun MessageList(
     messages: List<ChatMessage>,
     loading: Boolean,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberLazyListState()
-
     LaunchedEffect(messages.size, loading) {
         val count = messages.size + if (loading) 1 else 0
-        if (count > 0) listState.animateScrollToItem(count - 1)
+        if (count == 0) return@LaunchedEffect
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+        if (lastVisible >= count - 2) {
+            val target = count - 1
+            if (target - listState.firstVisibleItemIndex > 6) {
+                listState.scrollToItem(target)
+            } else {
+                listState.animateScrollToItem(target)
+            }
+        }
     }
 
     LazyColumn(
@@ -267,6 +316,8 @@ private fun MessageList(
 @Composable
 private fun MessageBubble(message: ChatMessage) {
     val clipboard = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
 
     Row(
         modifier = Modifier
@@ -290,26 +341,44 @@ private fun MessageBubble(message: ChatMessage) {
                 contentColor = content,
                 shape = RoundedCornerShape(16.dp),
                 tonalElevation = 1.dp,
+                modifier = Modifier.widthIn(max = 320.dp),
             ) {
-                Text(
-                    text = if (message.voice) "🎙 ${message.text}" else message.text,
-                    style = MaterialTheme.typography.bodyMedium,
+                Column(
                     modifier = Modifier
-                        .widthIn(max = 320.dp)
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                         .combinedClickable(
                             onClick = {},
-                            onLongClick = { clipboard.setText(AnnotatedString(message.text)) },
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                clipboard.setText(AnnotatedString(message.text))
+                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                                    Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                         ),
-                )
+                ) {
+                    if (!message.fromUser && !message.isError) {
+                        MarkdownText(MarkdownParser.parse(message.text))
+                    } else {
+                        Text(
+                            text = if (message.voice) "🎙 ${message.text}" else message.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
             }
-            if (message.model != null || message.elapsedMs != null) {
+            val time = TimeFormat.time(message.createdAt)
+            if (message.model != null || message.elapsedMs != null || time.isNotEmpty()) {
                 val meta = buildString {
                     message.model?.let { append(it) }
                     if (message.provider != null && message.provider != message.model) {
                         append(" · ").append(message.provider)
                     }
                     message.elapsedMs?.let { append(" · ").append(it).append(" мс") }
+                    if (time.isNotEmpty()) {
+                        if (isNotEmpty()) append(" · ")
+                        append(time)
+                    }
                 }
                 Text(
                     text = meta,
@@ -428,6 +497,7 @@ private fun InputRow(
     loading: Boolean,
     onInputChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
+    onCancelRequest: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -450,12 +520,21 @@ private fun InputRow(
             ),
         )
         Spacer(Modifier.size(8.dp))
-        FilledIconButton(
-            onClick = onSend,
-            enabled = input.text.isNotBlank() && !loading,
-            modifier = Modifier.padding(bottom = 4.dp),
-        ) {
-            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Отправить")
+        if (loading) {
+            FilledIconButton(
+                onClick = onCancelRequest,
+                modifier = Modifier.padding(bottom = 4.dp),
+            ) {
+                Icon(Icons.Filled.Stop, contentDescription = "Отменить запрос")
+            }
+        } else {
+            FilledIconButton(
+                onClick = onSend,
+                enabled = input.text.isNotBlank(),
+                modifier = Modifier.padding(bottom = 4.dp),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Отправить")
+            }
         }
     }
 }
@@ -485,9 +564,9 @@ private fun ChatScreenPreview() {
                     ChatMessage(id = 3, fromUser = true, text = "а погода какая?", voice = true),
                 ),
                 models = ModelsState(
-                    suggestions = listOf("deepseek", "gemini", "фри", "гигачат"),
+                    suggestions = listOf("deepseek", "gemini", "фри"),
+                    providers = listOf("gemini", "openrouter"),
                 ),
-                serverUrl = "http://192.168.0.16:8080",
                 assistantActive = true,
                 speaking = true,
                 wakeWord = "старт",
@@ -496,8 +575,9 @@ private fun ChatScreenPreview() {
             ),
             onInputChange = {},
             onSend = {},
+            onCancelRequest = {},
             onModelPicked = {},
-            onSaveSettings = { _, _, _, _, _ -> },
+            onSaveSettings = { _, _, _, _ -> },
             onSaveCustomWord = { _, _ -> },
             onRemoveCustomWord = {},
             onStopSpeaking = {},

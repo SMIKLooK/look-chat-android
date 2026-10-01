@@ -54,7 +54,8 @@ fun ModelsTabContent(
         )
         if (models.suggestions.isEmpty()) {
             Text(
-                "Сервер не ответил — список моделей пуст.\nПроверьте адрес сервера (⚙).",
+                "Список моделей пуст — ни один провайдер не подключён.\n" +
+                    "Впиши API-ключи в ai/Keys.kt и пересобери приложение.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp),

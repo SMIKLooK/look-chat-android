@@ -27,6 +27,7 @@ class VoiceCommandParserTest {
     @Test
     fun `wake word rejects too different tokens`() {
         assertFalse(VoiceCommandParser.isWakeToken("стартовый", wake)) // +3 буквы
+        assertFalse(VoiceCommandParser.isWakeToken("стартап", wake))
         assertFalse(VoiceCommandParser.isWakeToken("ст", wake))
         assertFalse(VoiceCommandParser.isWakeToken("привет", wake))
     }

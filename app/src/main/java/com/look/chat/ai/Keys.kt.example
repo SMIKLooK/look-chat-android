@@ -1,0 +1,16 @@
+package com.look.chat.ai
+
+object Keys {
+
+    var Gemini = ""
+
+    var OpenRouter = ""
+
+    var Gptunnel = ""
+
+    var GeminiModels: List<String> = emptyList()
+    var OpenRouterModels: List<String> = emptyList()
+    var GptunnelModels: List<String> = emptyList()
+
+    val ExtraModelAliases: Map<String, String> = emptyMap()
+}
