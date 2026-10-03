@@ -30,9 +30,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.look.chat.data.model.ModelsState
 
+internal fun providerLabel(name: String, apiKeys: Map<String, String>): String =
+    if (name in apiKeys) "$name 🔑" else name
+
 @Composable
 fun ModelsTabContent(
     models: ModelsState,
+    apiKeys: Map<String, String>,
     customWords: Map<String, String>,
     onSaveWord: (word: String, model: String) -> Unit,
     onRemoveWord: (String) -> Unit,
@@ -52,10 +56,19 @@ fun ModelsTabContent(
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(16.dp),
         )
+        if (models.providers.isNotEmpty()) {
+            Text(
+                text = models.providers.joinToString(" · ") { providerLabel(it, apiKeys) },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
+            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        }
         if (models.suggestions.isEmpty()) {
             Text(
                 "Список моделей пуст — ни один провайдер не подключён.\n" +
-                    "Впиши API-ключи в ai/Keys.kt и пересобери приложение.",
+                    "Открой настройки (⚙) и добавь свой API-ключ.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp),

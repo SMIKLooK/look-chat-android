@@ -31,6 +31,7 @@ class SettingsTest {
         assertEquals(Settings.DEFAULT_TTS_SKIP_CHARS, s.ttsSkipChars)
         assertEquals(Settings.DEFAULT_BEEP_INTERVAL_SEC, s.beepIntervalSec)
         assertEquals(emptyMap<String, String>(), s.customModelWords)
+        assertEquals(emptyMap<String, String>(), s.apiKeys)
     }
 
     @Test
@@ -85,6 +86,25 @@ class SettingsTest {
     fun `malformed custom word entries are skipped`() {
         prefs.edit().putString("custom_model_words", "безравно,=модель,слово=,норм=gemini").commit()
         assertEquals(mapOf("норм" to "gemini"), fresh().customModelWords)
+    }
+
+    @Test
+    fun `api keys survive roundtrip and are trimmed`() {
+        fresh().apiKeys = mapOf("gemini" to "  key-1  ", "openrouter" to "sk-or")
+        assertEquals(mapOf("gemini" to "key-1", "openrouter" to "sk-or"), fresh().apiKeys)
+    }
+
+    @Test
+    fun `blank api key is dropped`() {
+        fresh().apiKeys = mapOf("gemini" to "k", "gptunnel" to "   ", "openrouter" to "")
+        assertEquals(mapOf("gemini" to "k"), fresh().apiKeys)
+    }
+
+    @Test
+    fun `api key can be cleared back to empty map`() {
+        fresh().apiKeys = mapOf("gemini" to "k")
+        fresh().apiKeys = emptyMap()
+        assertEquals(emptyMap<String, String>(), fresh().apiKeys)
     }
 
     @Test

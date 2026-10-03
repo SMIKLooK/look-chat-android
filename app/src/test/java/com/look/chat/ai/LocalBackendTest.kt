@@ -77,12 +77,30 @@ class LocalBackendTest {
     }
 
     @Test
-    fun `registry without providers explains about keys`() {
+    fun `registry without providers explains where to add keys`() {
         val e = assertThrows(AiError::class.java) {
             runBlocking { backend(providers = emptyList()).process("фри привет") }
         }
         assertEquals(AiError.PROVIDER_ERROR, e.code)
-        assertTrue(e.message!!.contains("Keys.kt"))
+        assertTrue(e.message!!.contains("настройки"))
+    }
+
+    @Test
+    fun `defaultRegistry user key overrides builtin and empty builtin is filled`() {
+        val saved = listOf(Keys.Gemini, Keys.Gptunnel, Keys.OpenRouter)
+        Keys.Gemini = ""
+        Keys.Gptunnel = "builtin-gptunnel"
+        Keys.OpenRouter = ""
+        try {
+            val registry = LocalBackend.defaultRegistry(
+                mapOf("openrouter" to "user-key", "gptunnel" to "  ", "gemini" to "user-gemini"),
+            )
+            assertEquals(listOf("gemini", "gptunnel", "openrouter"), registry.providers.map { it.name })
+        } finally {
+            Keys.Gemini = saved[0]
+            Keys.Gptunnel = saved[1]
+            Keys.OpenRouter = saved[2]
+        }
     }
 
     @Test

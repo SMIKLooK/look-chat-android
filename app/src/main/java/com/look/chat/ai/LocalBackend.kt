@@ -14,8 +14,8 @@ class LocalBackend(val registry: ProviderRegistry) {
         if (registry.providers.isEmpty()) {
             throw AiError(
                 AiError.PROVIDER_ERROR,
-                "не задан ни один API-ключ: впиши ключи в ai/Keys.kt " +
-                    "(Gemini, OpenRouter, Gptunnel) и пересобери приложение",
+                "не задан ни один API-ключ: открой настройки (⚙) и добавь свой ключ " +
+                    "(Gemini, OpenRouter или Gptunnel)",
             )
         }
         val (provider, model) = registry.resolve(parsed.model)
@@ -35,29 +35,36 @@ class LocalBackend(val registry: ProviderRegistry) {
 
     companion object {
 
-        fun defaultRegistry(): ProviderRegistry {
+        fun defaultRegistry(userKeys: Map<String, String> = emptyMap()): ProviderRegistry {
             val registry = ProviderRegistry()
 
-            if (Keys.Gemini.isNotEmpty()) {
+            fun effective(id: String, builtin: String): String =
+                userKeys[id]?.trim()?.takeIf { it.isNotEmpty() } ?: builtin
+
+            val gemini = effective("gemini", Keys.Gemini)
+            val gptunnel = effective("gptunnel", Keys.Gptunnel)
+            val openrouter = effective("openrouter", Keys.OpenRouter)
+
+            if (gemini.isNotEmpty()) {
                 registry.register(
                     GeminiProvider(
-                        apiKey = Keys.Gemini,
+                        apiKey = gemini,
                         models = Keys.GeminiModels.ifEmpty { null },
                     ),
                 )
             }
-            if (Keys.Gptunnel.isNotEmpty()) {
+            if (gptunnel.isNotEmpty()) {
                 registry.register(
                     GptunnelProvider(
-                        apiKey = Keys.Gptunnel,
+                        apiKey = gptunnel,
                         models = Keys.GptunnelModels.ifEmpty { null },
                     ),
                 )
             }
-            if (Keys.OpenRouter.isNotEmpty()) {
+            if (openrouter.isNotEmpty()) {
                 registry.register(
                     OpenRouterProvider(
-                        apiKey = Keys.OpenRouter,
+                        apiKey = openrouter,
                         models = Keys.OpenRouterModels.ifEmpty { null },
                     ),
                 )

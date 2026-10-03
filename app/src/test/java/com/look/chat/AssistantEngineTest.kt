@@ -45,6 +45,7 @@ class AssistantEngineTest {
         AssistantEngine._beepIntervalSec.value = 0
         AssistantEngine._ttsSkipChars.value = Settings.DEFAULT_TTS_SKIP_CHARS
         AssistantEngine._customModelWords.value = emptyMap()
+        AssistantEngine._apiKeys.value = emptyMap()
         AssistantEngine._models.value = ModelsState()
         AssistantEngine._loading.value = false
         AssistantEngine._assistantActive.value = false
@@ -227,6 +228,57 @@ class AssistantEngineTest {
         assertEquals(emptyMap<String, String>(), AssistantEngine.customModelWords.value)
         assertEquals(emptyMap<String, String>(), Settings(context).customModelWords)
         assertEquals("Слово «джарвис» удалено", AssistantEngine.messages.value[afterAdd].text)
+    }
+
+    @Test
+    fun `saveApiKeys persists, rebuilds backend and reports`() {
+        AssistantEngine.ensureInit(context)
+        val base = AssistantEngine.messages.value.size
+
+        AssistantEngine.saveApiKeys(mapOf("gemini" to " user-key "))
+
+        assertEquals(mapOf("gemini" to "user-key"), AssistantEngine.apiKeys.value)
+        assertEquals(mapOf("gemini" to "user-key"), Settings(context).apiKeys)
+        assertTrue(AssistantEngine.backend.registry.providers.any { it.name == "gemini" })
+        assertEquals(
+            listOf("Свой ключ задан: gemini"),
+            AssistantEngine.messages.value.drop(base).map { it.text },
+        )
+    }
+
+    @Test
+    fun `saveApiKeys clearing removes provider and reports fallback`() {
+        AssistantEngine.saveApiKeys(mapOf("gemini" to " user-key "))
+        val afterSet = AssistantEngine.messages.value.size
+
+        AssistantEngine.saveApiKeys(mapOf("gemini" to ""))
+
+        assertEquals(emptyMap<String, String>(), AssistantEngine.apiKeys.value)
+        assertEquals(emptyMap<String, String>(), Settings(context).apiKeys)
+        assertEquals(
+            "Встроенный ключ снова в деле: gemini",
+            AssistantEngine.messages.value[afterSet].text,
+        )
+    }
+
+    @Test
+    fun `saveApiKeys with same keys does nothing`() {
+        AssistantEngine.saveApiKeys(mapOf("gemini" to "user-key"))
+        val base = AssistantEngine.messages.value.size
+
+        AssistantEngine.saveApiKeys(mapOf("gemini" to " user-key "))
+
+        assertEquals(base, AssistantEngine.messages.value.size)
+    }
+
+    @Test
+    fun `ensureInit loads persisted api keys and rebuilds backend`() {
+        prefs().edit().putString("api_key_openrouter", "user-or-key").commit()
+
+        AssistantEngine.ensureInit(context)
+
+        assertEquals(mapOf("openrouter" to "user-or-key"), AssistantEngine.apiKeys.value)
+        assertTrue(AssistantEngine.backend.registry.providers.any { it.name == "openrouter" })
     }
 
     @Test

@@ -23,6 +23,7 @@ data class ChatScreenUiState(
     val ttsSkipChars: String = "",
     val beepSec: Int = 0,
     val customWords: Map<String, String> = emptyMap(),
+    val apiKeys: Map<String, String> = emptyMap(),
 )
 
 @Composable
@@ -43,6 +44,7 @@ fun ChatScreen() {
         ttsSkipChars = AssistantEngine.ttsSkipChars.collectAsStateWithLifecycle().value,
         beepSec = AssistantEngine.beepIntervalSec.collectAsStateWithLifecycle().value,
         customWords = AssistantEngine.customModelWords.collectAsStateWithLifecycle().value,
+        apiKeys = AssistantEngine.apiKeys.collectAsStateWithLifecycle().value,
     )
 
     ChatScreenContent(
@@ -52,6 +54,7 @@ fun ChatScreen() {
         onCancelRequest = AssistantEngine::cancelRequest,
         onModelPicked = AssistantEngine::onModelPicked,
         onSaveSettings = AssistantEngine::saveSettings,
+        onSaveApiKeys = AssistantEngine::saveApiKeys,
         onSaveCustomWord = AssistantEngine::saveCustomWord,
         onRemoveCustomWord = AssistantEngine::removeCustomWord,
         onStopSpeaking = AssistantEngine::stopSpeaking,

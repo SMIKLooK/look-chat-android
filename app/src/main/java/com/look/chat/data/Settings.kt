@@ -38,6 +38,19 @@ class Settings(context: Context) {
             putString(KEY_CUSTOM_WORDS, value.entries.joinToString(",") { "${it.key}=${it.value}" })
         }
 
+    var apiKeys: Map<String, String>
+        get() = API_KEY_PROVIDERS.keys.mapNotNull { id ->
+            prefs.getString(KEY_API_PREFIX + id, null)?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { id to it }
+        }.toMap()
+        set(value) = prefs.edit {
+            API_KEY_PROVIDERS.keys.forEach { id ->
+                val key = value[id]?.trim().orEmpty()
+                if (key.isEmpty()) remove(KEY_API_PREFIX + id) else putString(KEY_API_PREFIX + id, key)
+            }
+        }
+
     companion object {
         const val DEFAULT_WAKE_WORD = "старт"
         const val DEFAULT_END_WORD = "стоп"
@@ -46,10 +59,17 @@ class Settings(context: Context) {
 
         const val DEFAULT_TTS_SKIP_CHARS = "*_#~`"
 
+        val API_KEY_PROVIDERS = mapOf(
+            "gemini" to "Gemini",
+            "openrouter" to "OpenRouter",
+            "gptunnel" to "Gptunnel",
+        )
+
         private const val KEY_WORD = "wake_word"
         private const val KEY_END_WORD = "end_word"
         private const val KEY_TTS_SKIP = "tts_skip_chars"
         private const val KEY_CUSTOM_WORDS = "custom_model_words"
         private const val KEY_BEEP = "beep_interval_sec"
+        private const val KEY_API_PREFIX = "api_key_"
     }
 }

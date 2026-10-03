@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.Volatile
 
 object AssistantEngine {
     private const val TAG = "LookAssistant"
@@ -36,6 +37,7 @@ object AssistantEngine {
     private var appContext: Context? = null
     private var settings: Settings? = null
 
+    @Volatile
     internal var backend: LocalBackend = LocalBackend(LocalBackend.defaultRegistry())
 
     private val nextId = AtomicLong(1L)
@@ -73,6 +75,9 @@ object AssistantEngine {
 
     internal val _customModelWords = MutableStateFlow<Map<String, String>>(emptyMap())
     val customModelWords: StateFlow<Map<String, String>> = _customModelWords.asStateFlow()
+
+    internal val _apiKeys = MutableStateFlow<Map<String, String>>(emptyMap())
+    val apiKeys: StateFlow<Map<String, String>> = _apiKeys.asStateFlow()
 
     internal val _dictating = MutableStateFlow(false)
     val dictating: StateFlow<Boolean> = _dictating.asStateFlow()
@@ -142,6 +147,8 @@ object AssistantEngine {
         _endWord.value = s.endWord
         _ttsSkipChars.value = s.ttsSkipChars
         _customModelWords.value = s.customModelWords
+        _apiKeys.value = s.apiKeys
+        if (_apiKeys.value.isNotEmpty()) rebuildBackend()
         refreshModels()
     }
 
@@ -213,6 +220,28 @@ object AssistantEngine {
         settings?.customModelWords = updated
         _customModelWords.value = updated
         addSystem("Слово «$word» удалено")
+    }
+
+    fun saveApiKeys(keys: Map<String, String>) {
+        val cleaned = keys.mapValues { it.value.trim() }.filterValues { it.isNotEmpty() }
+        val before = _apiKeys.value
+        if (cleaned == before) return
+        settings?.apiKeys = cleaned
+        _apiKeys.value = cleaned
+        rebuildBackend()
+
+        val set = (cleaned.keys - before.keys).sorted()
+        val removed = (before.keys - cleaned.keys).sorted()
+        val report = buildList {
+            if (set.isNotEmpty()) add("Свой ключ задан: ${set.joinToString()}")
+            if (removed.isNotEmpty()) add("Встроенный ключ снова в деле: ${removed.joinToString()}")
+        }
+        addSystem(report.joinToString("\n").ifEmpty { "Ключи провайдеров обновлены" })
+    }
+
+    private fun rebuildBackend() {
+        backend = LocalBackend(LocalBackend.defaultRegistry(_apiKeys.value))
+        refreshModels()
     }
 
     fun refreshModels() {
@@ -317,7 +346,7 @@ object AssistantEngine {
                             fromUser = false,
                             text = "Не удалось обратиться к модели\n" +
                                 "(${e.message ?: e.javaClass.simpleName})\n\n" +
-                                "Проверь интернет-соединение и ключи провайдеров (ai/Keys.kt).",
+                                "Проверь интернет-соединение и ключи провайдеров в настройках (⚙).",
                             isError = true,
                             createdAt = System.currentTimeMillis(),
                         )

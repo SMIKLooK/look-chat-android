@@ -1,6 +1,7 @@
 package com.look.chat.ui
 
 import android.Manifest
+import android.content.ClipData
 import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
@@ -64,10 +65,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,6 +91,7 @@ fun ChatScreenContent(
     onCancelRequest: () -> Unit,
     onModelPicked: (String) -> Unit,
     onSaveSettings: (wakeWord: String, endWord: String, skipChars: String, beepSec: Int) -> Unit,
+    onSaveApiKeys: (Map<String, String>) -> Unit,
     onSaveCustomWord: (word: String, model: String) -> Unit,
     onRemoveCustomWord: (String) -> Unit,
     onStopSpeaking: () -> Unit,
@@ -142,8 +144,10 @@ fun ChatScreenContent(
             currentEndWord = state.endWord,
             currentSkipChars = state.ttsSkipChars,
             currentBeepSec = state.beepSec,
-            onSave = { word, end, skip, beep ->
+            currentApiKeys = state.apiKeys,
+            onSave = { word, end, skip, beep, keys ->
                 onSaveSettings(word, end, skip, beep)
+                onSaveApiKeys(keys)
                 showSettings = false
             },
             onDismiss = { showSettings = false },
@@ -157,6 +161,7 @@ fun ChatScreenContent(
                 Column(modifier = Modifier.imePadding()) {
                     ModelsTabContent(
                         models = state.models,
+                        apiKeys = state.apiKeys,
                         customWords = state.customWords,
                         onSaveWord = onSaveCustomWord,
                         onRemoveWord = onRemoveCustomWord,
@@ -182,9 +187,11 @@ fun ChatScreenContent(
                             Text("Look Chat")
                             Text(
                                 text = if (state.models.providers.isEmpty()) {
-                                    "Ключи не заданы (ai/Keys.kt)"
+                                    "Ключи не заданы — добавь в ⚙"
                                 } else {
-                                    state.models.providers.joinToString(" · ")
+                                    state.models.providers.joinToString(" · ") {
+                                        providerLabel(it, state.apiKeys)
+                                    }
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -315,9 +322,10 @@ private fun MessageList(
 
 @Composable
 private fun MessageBubble(message: ChatMessage) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     Row(
         modifier = Modifier
@@ -350,7 +358,11 @@ private fun MessageBubble(message: ChatMessage) {
                             onClick = {},
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                clipboard.setText(AnnotatedString(message.text))
+                                scope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipEntry(ClipData.newPlainText("Look Chat", message.text)),
+                                    )
+                                }
                                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
                                     Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
                                 }
@@ -578,6 +590,7 @@ private fun ChatScreenPreview() {
             onCancelRequest = {},
             onModelPicked = {},
             onSaveSettings = { _, _, _, _ -> },
+            onSaveApiKeys = {},
             onSaveCustomWord = { _, _ -> },
             onRemoveCustomWord = {},
             onStopSpeaking = {},
